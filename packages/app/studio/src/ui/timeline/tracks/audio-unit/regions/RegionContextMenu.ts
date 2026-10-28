@@ -27,6 +27,7 @@ import {TempoDetection} from "@/service/TempoDetection"
 import {AudioMaterialDialog} from "@/ui/analysis/AudioMaterialDialog"
 import {Bounces} from "@/service/Bounces"
 import {MonoConversions} from "@/service/MonoConversions"
+import {NitroGenerate} from "@/nitro/NitroGenerate"
 
 type Construct = {
     element: Element
@@ -240,6 +241,7 @@ export const installRegionContextMenu =
                         })
                     }
                 }),
+                NitroGenerate.menu(service, region),
                 DebugMenus.debugBox(region.box)
             )
         })

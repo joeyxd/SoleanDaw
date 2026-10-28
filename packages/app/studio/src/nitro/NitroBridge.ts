@@ -3,6 +3,7 @@
 import {Nullable, Option, RuntimeNotifier, tryCatch} from "@opendaw/lib-std"
 import {ProjectBundle} from "@opendaw/studio-core"
 import type {StudioService} from "@/service/StudioService"
+import {NitroGenerate} from "@/nitro/NitroGenerate"
 
 type Session = { key: string, revision: number, service: StudioService, writable: boolean, saving: boolean }
 
@@ -90,6 +91,7 @@ export namespace NitroBridge {
         window.addEventListener("pagehide", release)
         Reflect.set(window, "nitroDaw", {save, status: () => ({...session, service: undefined})})
         show(`Nitro · ${title} · revision ${revision}`, "ok")
+        NitroGenerate.attach(service, key)
     }
 
     export const save = async (): Promise<void> => {
