@@ -31,6 +31,7 @@ import {ProjectSkeleton, SampleLoaderManager, SoundfontLoaderManager} from "@ope
 import {BoxGraph} from "@opendaw/lib-box"
 import {BoxIO} from "@opendaw/studio-boxes"
 import {WclapMissing} from "@/service/WclapMissing"
+import {NitroBridge} from "@/nitro/NitroBridge"
 
 export class ProjectProfileService {
     readonly #profile: MutableObservableOption<ProjectProfile>
@@ -67,6 +68,7 @@ export class ProjectProfileService {
     }
 
     async save(): Promise<void> {
+        if (NitroBridge.active()) {return NitroBridge.save()}
         return this.#profile.ifSome(async profile => {
             if (!profile.saved()) {return this.saveAs()}
             // OPFS can go unavailable AFTER a successful boot probe (Safari/Firefox flakiness, storage eviction),

@@ -46,6 +46,7 @@ import {Tour} from "@/ui/tour/Tour"
 import {Menu} from "@/ui/components/Menu"
 import {TouchContextMenu} from "@/ui/TouchContextMenu"
 import {WasmEngine} from "@opendaw/studio-core-wasm"
+import {NitroBridge} from "@/nitro/NitroBridge"
 
 if ("stackTraceLimit" in Error) {Error.stackTraceLimit = 50}
 
@@ -181,6 +182,7 @@ export const boot = async ({workersUrl, workletsUrl, wasmProcessorUrl, wasmOffli
         return
     }
     SampleGarbage.purge().catch(console.warn)
+    NitroBridge.install(service).catch(console.warn)
     if (buildInfo.env === "production" && !Browser.isLocalHost()) {
         if (import.meta.env.BUILD_UUID !== buildInfo.uuid) {
             console.warn("Cache issue:")

@@ -304,7 +304,7 @@ export class ErrorHandler {
 
     #report(scope: string, error: ErrorInfo): void {
         console.error(scope, error.name, error.message, error.stack)
-        if (!import.meta.env.PROD) {return}
+        if (!import.meta.env.PROD || import.meta.env.VITE_NITRO === "1") {return}
         const maxStackSize = 2000
         const body = JSON.stringify({
             date: new Date().toISOString(),
