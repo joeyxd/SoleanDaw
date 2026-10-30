@@ -22,6 +22,9 @@ The overlay is two Nitro files in `packages/app/studio/src/nitro/`, this file, a
   (`NitroGenerate.tsx`). The clip is rendered in the browser and sent to Nitro, which runs the job
   on its own GPU workers; a placeholder clip shows the job's progress until the result lands on a
   new track named for the engine that made it.
+  The submenu also offers Split into instruments…, Get MIDI…, Get the sounds…, and Sounds like this….
+  Results land as stem tracks, editable instrument clips, Playfield/Nano samples, or audio variations;
+  MIDI can also load the clip's own drum sounds into the same Playfield track.
 
 Nitro keeps the overlay in `daw/studio-fork` and applies it to the pinned upstream commit when it
 builds the editor image; every edit is anchored and the build stops if upstream moves an anchor.

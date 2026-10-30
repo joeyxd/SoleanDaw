@@ -57,6 +57,10 @@ const renew = async (): Promise<void> => {
     const response = await fetch(route(session.key, "/lease"), {method: "PUT", headers: WriteHeaders}).catch(() => null)
     // A dropped request is retried at the next beat; the lease outlives two of them.
     if (response === null || response.ok || response.status >= 500) {return}
+    // A frozen hidden tab can sleep past the lease: take it back with this tab's own token unless
+    // another tab holds it now. A save still checks the revision, so nothing in between is lost.
+    const again = await fetch(route(session.key, "/lease"), {method: "POST", headers: WriteHeaders}).catch(() => null)
+    if (again !== null && again.ok) {return}
     session.writable = false
     fail("This tab lost the edit lease. Reopen the project from Nitro to keep editing.")
 }
@@ -88,6 +92,9 @@ export namespace NitroBridge {
         session = {key, revision, service, writable: true, saving: false}
         document.title = `${title} · Nitro DAW`
         setInterval(() => renew().finally(), LeaseMillis)
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "visible") {renew().finally()}
+        })
         window.addEventListener("pagehide", release)
         Reflect.set(window, "nitroDaw", {save, status: () => ({...session, service: undefined})})
         show(`Nitro · ${title} · revision ${revision}`, "ok")

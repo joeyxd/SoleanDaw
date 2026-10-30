@@ -13,12 +13,12 @@ import {
     Project,
     Workers
 } from "@opendaw/studio-core"
-import {AnyRegionBoxAdapter, AudioUnitBoxAdapter, InstrumentFactories, Sample} from "@opendaw/studio-adapters"
-import {AudioRegionBox, AudioUnitBox, NoteRegionBox, TrackBox} from "@opendaw/studio-boxes"
+import {AnyRegionBoxAdapter, AudioUnitBoxAdapter, InstrumentFactories, PlayfieldDeviceBoxAdapter, Sample, TrackType} from "@opendaw/studio-adapters"
+import {AudioFileBox, AudioRegionBox, AudioUnitBox, NoteRegionBox, PlayfieldDeviceBox, PlayfieldSampleBox, TrackBox} from "@opendaw/studio-boxes"
 import {Dialogs} from "@/ui/components/dialogs"
 import type {StudioService} from "@/service/StudioService"
 
-type Task = "generate" | "arrangement" | "accompaniment" | "lyrics" | "vocals"
+type Task = "generate" | "arrangement" | "accompaniment" | "lyrics" | "vocals" | "stems" | "midi" | "sounds" | "lookalike"
 type Engine = {
     id: string, name: string, licence: string, tasks: Array<Task>, seconds: [number, number],
     needs_source: Array<Task>, about: string, condition: Nullable<string>, admitted: boolean, attested: boolean,
@@ -32,15 +32,16 @@ type Job = {
     queue_position?: number, outputs: Array<Output>, placement: Nullable<{ region?: string, position?: number }>,
     lines?: Array<Line>, result: Nullable<{ cost_usd?: number, lyrics?: string }>, error: Nullable<string>,
     params: { seconds: number, prompt: string }
+    source?: { region?: string, unit?: string, label?: string, position?: number, duration?: number, seconds?: number }
 }
 type Request = {
     task: Task, engine: string, prompt: string, lyrics: string, seconds: number, instrumental: boolean,
-    language: string, attest: boolean
+    language: string, attest: boolean, split?: boolean, takes?: number, ownDrums?: boolean
 }
 type Row = {
     element: HTMLElement, message: HTMLElement, bar: HTMLElement, meta: HTMLElement, action: HTMLButtonElement
 }
-type Tracked = { job: Job, region: Optional<string>, row: Row, landing: boolean, finishedAt: number }
+type Tracked = { job: Job, region: Optional<string>, row: Row, landing: boolean, finishedAt: number, landed?: string }
 
 const Tasks: Record<Task, { menu: string, title: string, action: string, prompt: string }> = {
     generate: {menu: "Generate…", title: "Generate music", action: "Generate", prompt: "Style, mood, instruments"},
@@ -53,9 +54,15 @@ const Tasks: Record<Task, { menu: string, title: string, action: string, prompt:
         prompt: "The band you want around this clip"
     },
     lyrics: {menu: "Make lyrics…", title: "Write lyrics", action: "Write", prompt: "What the song is about"},
-    vocals: {menu: "Make vocals…", title: "Make vocals over this clip", action: "Sing", prompt: "The voice you want"}
+    vocals: {menu: "Make vocals…", title: "Make vocals over this clip", action: "Sing", prompt: "The voice you want"},
+    stems: {menu: "Split into instruments…", title: "Split into instruments", action: "Split", prompt: ""},
+    midi: {menu: "Get MIDI…", title: "Get MIDI", action: "Get MIDI", prompt: ""},
+    sounds: {menu: "Get the sounds…", title: "Get the sounds", action: "Get sounds", prompt: ""},
+    lookalike: {menu: "Sounds like this…", title: "Sounds like this", action: "Generate", prompt: "Describe the sound you want"}
 }
 const Order: ReadonlyArray<Task> = ["generate", "arrangement", "accompaniment", "lyrics", "vocals"]
+const ClipTasks: ReadonlyArray<Task> = ["stems", "midi", "sounds", "lookalike"]
+const StemOrder = ["vocals", "drums", "bass", "guitar", "piano", "other"]
 const ActiveStates = new Set(["queued", "running", "cancel_requested"])
 const WriteHeaders = {"x-nitro-daw": "1"}
 const Placeholder = "⏳"
@@ -223,6 +230,7 @@ const field = (label: string, input: HTMLElement, hint?: HTMLElement): HTMLEleme
 const ask = async (task: Task, list: ReadonlyArray<Engine>, clip: {
     seconds: number, label: string, track: string, bpm: number, lyrics: string
 }): Promise<Nullable<Request>> => {
+    const clipTool = ClipTasks.includes(task)
     const usable = list.filter(engine => engine.tasks.includes(task))
     if (usable.length === 0) {
         await RuntimeNotifier.info({headline: "Nitro AI", message: "No engine on this Desk can do that yet."})
@@ -258,11 +266,18 @@ const ask = async (task: Task, list: ReadonlyArray<Engine>, clip: {
                   placeholder={"[verse]\nFirst line\nSecond line\n[chorus]\n…"}/>
     )
     lyricsField.value = lyricsDefault
-    const initialSeconds = task === "generate" ? 30 : task === "arrangement" ? Math.max(60, Math.round(clip.seconds))
+    const initialSeconds = clipTool ? clip.seconds : task === "generate" ? 30 : task === "arrangement" ? Math.max(60, Math.round(clip.seconds))
         : Math.round(clip.seconds)
     const secondsField: HTMLInputElement = (<input type="number" className="default" step="1" style={{width: "90px"}}/>)
     const languageField: HTMLInputElement = (<input type="text" className="default" placeholder="English" maxLength={32}/>)
     const instrumentalField: HTMLInputElement = (<input type="checkbox"/>)
+    const splitField: HTMLInputElement = (<input type="checkbox" checked/>)
+    const ownDrumsField: HTMLInputElement = (<input type="checkbox" checked/>)
+    splitField.onchange = () => {ownDrumsField.disabled = !splitField.checked}
+    const takesField: HTMLInputElement = (<input type="number" className="default" min="1" max="4" step="1" value="2"/>)
+    const checkbox = (input: HTMLInputElement, label: string): HTMLElement => (
+        <label style={{display: "flex", gap: "6px", fontSize: "12px", alignItems: "center"}}>{input}<span>{label}</span></label>
+    )
     const chips: HTMLElement = (<div style={{display: "flex", flexWrap: "wrap", gap: "6px"}}/>)
     const showChips = (suggestions: ReadonlyArray<string>): void => {
         chips.replaceChildren(...suggestions.map(suggestion => (
@@ -290,15 +305,17 @@ const ask = async (task: Task, list: ReadonlyArray<Engine>, clip: {
                 ideas.textContent = "Ideas from Max"
             })
     }
-    post<{ suggestions: Array<string> }>("/suggest", {task}).then(answer => showChips(answer?.suggestions ?? []),
-        () => undefined)
+    if (!clipTool) {
+        post<{ suggestions: Array<string> }>("/suggest", {task}).then(answer => showChips(answer?.suggestions ?? []),
+            () => undefined)
+    }
     const update = (): void => {
         const engine = usable.find(candidate => candidate.id === engineField.value) ?? preferred
         const [low, high] = engine.seconds
         secondsField.min = String(low)
         secondsField.max = String(high)
         const current = Number(secondsField.value || initialSeconds)
-        secondsField.value = String(Math.min(high, Math.max(low, Math.round(current))))
+        secondsField.value = String(Math.min(high, Math.max(low, clipTool ? current : Math.round(current))))
         const status = engine.state === "ready" ? "" : ` Now: ${engine.detail || engine.state.replace("_", " ")}.`
         about.textContent = `${engine.about}${engine.admitted ? "" : ` ${engine.reason}.`}${status}`
         const needsAttest = engine.licence === "conditional" && !engine.attested
@@ -313,19 +330,23 @@ const ask = async (task: Task, list: ReadonlyArray<Engine>, clip: {
         <div style={{display: "flex", flexDirection: "column", gap: "10px", width: "min(500px, 80vw)"}}>
             {field("Engine", engineField, about)}
             {attestRow}
-            {field(task === "lyrics" ? "Theme" : "Prompt", promptField, chips)}
-            <div style={{display: "flex", gap: "8px", alignItems: "center"}}>{ideas}</div>
+            {!clipTool || task === "lookalike" ? field(task === "lyrics" ? "Theme" : "Prompt", promptField, clipTool ? undefined : chips) : ""}
+            {!clipTool ? <div style={{display: "flex", gap: "8px", alignItems: "center"}}>{ideas}</div> : ""}
+            {task === "midi" || task === "sounds" ? checkbox(splitField,
+                task === "midi" ? "Split into instruments first" : "Take the drums from the mix") : ""}
+            {task === "midi" ? checkbox(ownDrumsField, "Also load this clip's own drum sounds") : ""}
             {lyricsWanted ? field(task === "vocals" ? "Lyrics to sing" : "Lyrics (optional)", lyricsField) : ""}
             <div style={{display: "flex", gap: "16px", alignItems: "flex-end", flexWrap: "wrap"}}>
-                {field("Seconds", secondsField)}
+                {!clipTool || task === "lookalike" ? field("Seconds", secondsField) : ""}
+                {task === "lookalike" ? field("Variations", takesField) : ""}
                 {task === "lyrics" || task === "vocals" || task === "generate" ? field("Language", languageField) : ""}
                 {task === "generate" || task === "arrangement" ? (
                     <label style={{display: "flex", gap: "6px", fontSize: "12px", alignItems: "center"}}>
                         {instrumentalField}<span>Instrumental</span></label>) : ""}
             </div>
-            <p style={{margin: "0", fontSize: "11px", color: Dim}}>
+            {!clipTool ? <p style={{margin: "0", fontSize: "11px", color: Dim}}>
                 {`The result lands on a new track at this clip, labelled with its engine. Clip: ${clip.label || "untitled"}, ${clock(clip.seconds)}.`}
-            </p>
+            </p> : ""}
         </div>
     )
     const answer = await Promises.tryCatch(Dialogs.show({
@@ -339,7 +360,11 @@ const ask = async (task: Task, list: ReadonlyArray<Engine>, clip: {
     return {
         task, engine: engineField.value, prompt: promptField.value.trim(), lyrics: lyricsWanted ? lyricsField.value.trim() : "",
         seconds: Math.min(high, Math.max(low, Number(secondsField.value) || initialSeconds)),
-        instrumental: instrumentalField.checked, language: languageField.value.trim(), attest: attestField.checked
+        instrumental: task === "lookalike" || instrumentalField.checked,
+        language: languageField.value.trim(), attest: attestField.checked,
+        split: task === "midi" || task === "sounds" ? splitField.checked : undefined,
+        ownDrums: task === "midi" && splitField.checked && ownDrumsField.checked,
+        takes: task === "lookalike" ? Math.min(4, Math.max(1, Math.round(Number(takesField.value) || 2))) : undefined
     }
 }
 
@@ -392,7 +417,7 @@ const paint = (item: Tracked): void => {
     bar.style.backgroundSize = indeterminate ? "40px 100%" : ""
     bar.style.animation = indeterminate ? "nitro-busy 1s linear infinite" : ""
     const text = item.landing ? "Placing it on the timeline…" : job.state === "succeeded"
-        ? "Done, on the timeline" : job.state === "failed" ? `Failed: ${job.error ?? job.message}`
+        ? item.landed ?? "Done, on the timeline" : job.state === "failed" ? `Failed: ${job.error ?? job.message}`
             : job.state === "cancelled" ? "Cancelled" : job.state === "outcome_unknown" ? job.message : describe(job)
     row.message.textContent = text
     const cost = isDefined(job.result?.cost_usd) ? ` · about $${job.result.cost_usd.toFixed(3)}` : ""
@@ -477,13 +502,181 @@ const landLyrics = async (service: StudioService, job: Job): Promise<void> => {
     await post(`/jobs/${job.id}/placed`, {})
 }
 
+type ClipNote = { stem: string, pitch: number, start: number, length: number, velocity: number }
+type KitHit = { label: string, kind: "drum" | "pitched", root_midi: Nullable<number>, gm_note: Nullable<number> }
+type ClipSample = { label: string, sample: Sample, file: () => AudioFileBox }
+
+const stemName = (stem: string): string => stem.charAt(0).toUpperCase() + stem.slice(1)
+
+// Both jobs use the same exact name, whether the notes or the samples finish first.
+const drumTrack = (project: Project, name: string): {
+    audioUnitBox: AudioUnitBox, instrumentBox: PlayfieldDeviceBox, trackBox: TrackBox
+} => {
+    for (const unit of project.rootBoxAdapter.audioUnits.adapters()) {
+        if (unit.label !== name) {continue}
+        const device = unit.input.adapter().unwrapOrNull()
+        const track = unit.tracks.values().find(track => track.type === TrackType.Notes)
+        if (isDefined(device) && isInstanceOf(device.box, PlayfieldDeviceBox) && isDefined(track)) {
+            return {audioUnitBox: unit.box, instrumentBox: device.box, trackBox: track.box}
+        }
+    }
+    const product = project.api.createInstrument(InstrumentFactories.Playfield, {name})
+    product.instrumentBox.label.setValue(name)
+    return product
+}
+
+const landClipTool = async (service: StudioService, job: Job): Promise<string> => {
+    const {project} = service
+    const json = async <T, >(label: string): Promise<T> => {
+        const value = await fetchJson<T>(`/jobs/${job.id}/outputs/${label}`)
+        if (isAbsent(value)) {throw new Error(`The ${label} result could not be downloaded`)}
+        return value
+    }
+    const notes = job.task === "midi"
+        ? (await json<{ notes: Array<ClipNote> }>("notes")).notes : []
+    const hits = job.task === "sounds"
+        ? (await json<{ hits: Array<KitHit> }>("kit")).hits : []
+    const pitched = hits.filter(hit => hit.kind === "pitched")
+    const selectedHits = hits.filter(hit => hit.kind === "drum").concat(pitched.slice(0, 4))
+    const labels = job.task === "stems" ? StemOrder : job.task === "sounds" ? selectedHits.map(hit => hit.label)
+        : job.task === "lookalike" ? job.outputs.filter(output => output.label.startsWith("variation-"))
+            .map(output => output.label).sort((a, b) => Number(a.split("-")[1]) - Number(b.split("-")[1])) : []
+    const skipped: Array<string> = []
+    const samples: Array<ClipSample> = []
+    for (const label of labels) {
+        const response = await fetch(route(`/jobs/${job.id}/outputs/${label}`))
+        if (!response.ok) {throw new Error(`The ${label} audio could not be downloaded`)}
+        const audioData = await decodeAudio(service, await response.arrayBuffer())
+        if (job.task === "stems") {
+            let peak = 0
+            for (const channel of audioData.frames) {
+                for (const value of channel) {peak = Math.max(peak, Math.abs(value))}
+            }
+            if (peak < Math.pow(10, -50 / 20)) {skipped.push(stemName(label)); continue}
+        }
+        const sample = await service.sampleService.importFile({
+            name: label, bpm: project.timelineBox.bpm.getValue(), arrayBuffer: WavFile.encodeFloats(audioData)
+        })
+        const file = await AudioFileBoxFactory.createModifier(Workers.Transients, project.boxGraph, audioData,
+            UUID.parse(sample.uuid), sample.name)
+        samples.push({label, sample, file})
+    }
+    let originalMuted = false
+    const placed = project.editing.modify(() => {
+        const source = findRegion(project, job.source?.region)
+        const position = source.mapOr(box => box.position.getValue(), job.source?.position ?? job.placement?.position ?? 0)
+        const sourceUnit = source.flatMap(trackOf).flatMap(track => track.target.targetVertex)
+            .flatMap(vertex => isInstanceOf(vertex.box, AudioUnitBox) ? Option.wrap(vertex.box) : Option.None)
+        const unit = sourceUnit.nonEmpty() ? sourceUnit : isDefined(job.source?.unit)
+            ? project.boxGraph.findBox(UUID.parse(job.source.unit))
+                .flatMap(box => isInstanceOf(box, AudioUnitBox) ? Option.wrap(box) : Option.None) : Option.None
+        const placeholder = findRegion(project, job.placement?.region)
+        placeholder.flatMap(trackOf).flatMap(track => track.target.targetVertex).ifSome(vertex => {
+            if (isInstanceOf(vertex.box, AudioUnitBox)) {project.api.deleteAudioUnit(vertex.box)}
+        })
+        let index = unit.mapOr(box => box.index.getValue() + 1, 0)
+        const label = job.source?.label || "untitled"
+        const name = `Drums · ${label}`
+        const move = (box: AudioUnitBox): void => {
+            project.api.placeAudioUnit(box, index)
+            index = box.index.getValue() + 1
+        }
+        const regions: Array<string> = []
+        if (job.task === "midi") {
+            const groups = new Map<string, Array<ClipNote>>()
+            notes.forEach(note => {
+                const group = groups.get(note.stem) ?? []
+                group.push(note)
+                groups.set(note.stem, group)
+            })
+            const startSeconds = project.tempoMap.ppqnToSeconds(position)
+            const duration = job.source?.duration ??
+                Math.round(project.tempoMap.secondsToPPQN(startSeconds + (job.source?.seconds ?? job.params.seconds))) - position
+            for (const [stem, events] of groups) {
+                const title = stem === "drums" ? name : `${stemName(stem)} MIDI`
+                const {audioUnitBox, trackBox} = stem === "drums" ? drumTrack(project, name)
+                    : project.api.createInstrument(InstrumentFactories.Vaporisateur, {name: title})
+                move(audioUnitBox)
+                const region = project.api.createNoteRegion({trackBox, position, duration, name: title})
+                events.forEach(note => {
+                    const from = Math.round(project.tempoMap.secondsToPPQN(startSeconds + note.start))
+                    const to = Math.round(project.tempoMap.secondsToPPQN(startSeconds + note.start + note.length))
+                    project.api.createNoteEvent({
+                        owner: region, position: from - position, duration: Math.max(1, to - from),
+                        pitch: note.pitch, velocity: note.velocity
+                    })
+                })
+                regions.push(UUID.toString(region.address.uuid))
+            }
+        } else if (job.task === "sounds") {
+            const drums = selectedHits.filter(hit => hit.kind === "drum")
+            if (drums.length > 0) {
+                const {audioUnitBox, instrumentBox} = drumTrack(project, name)
+                move(audioUnitBox)
+                const device = project.boxAdapters.adapterFor(instrumentBox, PlayfieldDeviceBoxAdapter)
+                const used = new Set<number>()
+                let free = 60
+                drums.forEach(hit => {
+                    let pad = hit.gm_note
+                    if (isAbsent(pad) || used.has(pad)) {
+                        while (used.has(free) || device.samples.adapters().some(sample => sample.box.index.getValue() === free)) {free++}
+                        pad = free++
+                    }
+                    used.add(pad)
+                    device.samples.adapters().filter(sample => sample.box.index.getValue() === pad)
+                        .forEach(sample => sample.box.delete())
+                    const audio = samples.find(sample => sample.label === hit.label)!
+                    const file = audio.file()
+                    PlayfieldSampleBox.create(project.boxGraph, UUID.generate(), box => {
+                        box.device.refer(instrumentBox.samples)
+                        box.file.refer(file)
+                        box.index.setValue(pad!)
+                    })
+                })
+            }
+            pitched.slice(0, 4).forEach(hit => {
+                const audio = samples.find(sample => sample.label === hit.label)!
+                const {audioUnitBox, instrumentBox} = project.api.createInstrument(InstrumentFactories.Nano,
+                    {name: `${hit.label} · ${label}`})
+                move(audioUnitBox)
+                instrumentBox.file.refer(audio.file())
+                instrumentBox.rootKey.setValue(hit.root_midi ?? 60)
+                instrumentBox.sampleStart.setValue(0)
+                instrumentBox.sampleEnd.setValue(1)
+            })
+        } else {
+            samples.forEach(audio => {
+                const title = job.task === "stems" ? stemName(audio.label) : `Variation ${audio.label.split("-")[1]} · ${label}`
+                const {audioUnitBox, trackBox} = project.api.createInstrument(InstrumentFactories.Tape, {name: title})
+                move(audioUnitBox)
+                audioUnitBox.mute.setValue(job.task === "lookalike" && audio.label !== "variation-1")
+                const region = AudioContentFactory.createNotStretchedRegion({
+                    boxGraph: project.boxGraph, targetTrack: trackBox, audioFileBox: audio.file(),
+                    sample: audio.sample, position, name: title
+                })
+                regions.push(UUID.toString(region.address.uuid))
+            })
+            if (job.task === "stems") {
+                source.ifSome(box => {box.mute.setValue(true); originalMuted = true})
+            }
+        }
+        samples.forEach(audio => project.trackUserCreatedSample(UUID.parse(audio.sample.uuid)))
+        return regions[0]
+    })
+    await post(`/jobs/${job.id}/placed`, placed.mapOr(region => isDefined(region) ? {region} : {}, {}))
+    return "Done, on the timeline" + (originalMuted ? "; the original clip is muted" : "") +
+        (skipped.length > 0 ? `; skipped silent stems: ${skipped.join(", ")}` : "") +
+        (pitched.length > 4 ? `; skipped ${pitched.length - 4} pitched sounds` : "")
+}
+
 const land = async (item: Tracked): Promise<void> => {
     if (isAbsent(attached) || item.landing) {return}
     const {service} = attached
     item.landing = true
     paint(item)
-    const result = await Promises.tryCatch(item.job.task === "lyrics"
-        ? landLyrics(service, item.job) : landAudio(service, item.job))
+    const result = await Promises.tryCatch(ClipTasks.includes(item.job.task)
+        ? landClipTool(service, item.job).then(message => {item.landed = message})
+        : item.job.task === "lyrics" ? landLyrics(service, item.job) : landAudio(service, item.job))
     item.landing = false
     if (result.status === "rejected") {
         console.warn(result.error)
@@ -591,10 +784,10 @@ const start = async (service: StudioService, region: AnyRegionBoxAdapter, task: 
     if (task === "vocals" && request.lyrics.length === 0) {
         return RuntimeNotifier.info({headline: "Nitro AI", message: "Write or paste the lyrics to sing first."})
     }
-    if (task !== "vocals" && request.prompt.length === 0) {
+    if (task !== "vocals" && (!ClipTasks.includes(task) || task === "lookalike") && request.prompt.length === 0) {
         return RuntimeNotifier.info({headline: "Nitro AI", message: "Describe what you want in the prompt first."})
     }
-    const wantsSource = isDefined(engine) && engine.id === "acestep-1.5" && task !== "lyrics"
+    const wantsSource = ClipTasks.includes(task) || isDefined(engine) && engine.id === "acestep-1.5" && task !== "lyrics"
     const inputs: Array<{ label: string, sha256: string, seconds: number }> = []
     if (wantsSource) {
         const progress = RuntimeNotifier.progress({headline: "Nitro AI", message: "Preparing the clip…"})
@@ -610,42 +803,63 @@ const start = async (service: StudioService, region: AnyRegionBoxAdapter, task: 
         }
         inputs.push({label: "source", sha256: uploaded.sha256, seconds: audioData.numberOfFrames / audioData.sampleRate})
     }
-    const engineName = engine?.name ?? request.engine
-    const title = `${Placeholder} ${engineName} · ${Tasks[task].title.replace(/ (from|for|over) this clip$/, "")} · starting`
-    const index = region.trackBoxAdapter.mapOr(track => track.audioUnit.index.getValue() + 1, 0)
-    const placeholder = task === "lyrics"
-        ? placeLyricsPlaceholder(project, region.position, region.duration, index, title)
-        : await placeAudioPlaceholder(service, region.position, index, title, `${engineName} · ${Tasks[task].action}`,
-            request.seconds)
-    if (placeholder.isEmpty()) {return}
-    const {unit, box} = placeholder.unwrap()
-    const submitted = await Promises.tryCatch(post<Job>("/jobs", {
-        task, engine: request.engine, prompt: request.prompt, lyrics: request.lyrics, seconds: request.seconds,
-        instrumental: request.instrumental, language: request.language, bpm: project.timelineBox.bpm.getValue(),
-        attest: request.attest, inputs, notes: notesOf(project, region) ?? undefined,
-        source: {
-            kind: region.type === "note-region" ? "notes" : "audio", label: region.label.slice(0, 200),
-            track_label: trackLabel.slice(0, 200), position: region.position, seconds: clipSeconds
-        },
-        placement: {
-            region: UUID.toString(box.address.uuid), unit: UUID.toString(unit.address.uuid), position: region.position
-        },
-        idempotency_key: `k${UUID.toString(box.address.uuid).replaceAll("-", "").slice(0, 32)}`
-    }))
-    if (submitted.status === "rejected" || isAbsent(submitted.value)) {
-        project.editing.modify(() => project.api.deleteAudioUnit(unit))
-        const message = submitted.status === "resolved" ? "Nitro could not be reached."
-            : submitted.error instanceof Error ? submitted.error.message : String(submitted.error)
-        return RuntimeNotifier.info({headline: "Nitro AI", message})
+    const submit = async (request: Request): Promise<boolean> => {
+        const task = request.task
+        const engineName = list.find(engine => engine.id === request.engine)?.name ?? request.engine
+        const title = `${Placeholder} ${engineName} · ${Tasks[task].title.replace(/ (from|for|over) this clip$/, "")} · starting`
+        const index = region.trackBoxAdapter.mapOr(track => track.audioUnit.index.getValue() + 1, 0)
+        const placeholder = task === "lyrics"
+            ? placeLyricsPlaceholder(project, region.position, region.duration, index, title)
+            : await placeAudioPlaceholder(service, region.position, index, title, `${engineName} · ${Tasks[task].action}`,
+                request.seconds)
+        if (placeholder.isEmpty()) {return false}
+        const {unit, box} = placeholder.unwrap()
+        const submitted = await Promises.tryCatch(post<Job>("/jobs", {
+            task, engine: request.engine, prompt: request.prompt, lyrics: request.lyrics, seconds: request.seconds,
+            instrumental: request.instrumental, language: request.language, bpm: project.timelineBox.bpm.getValue(),
+            attest: request.attest, inputs, notes: ClipTasks.includes(task) ? undefined : notesOf(project, region) ?? undefined,
+            split: request.split, takes: request.takes,
+            source: {
+                kind: region.type === "note-region" ? "notes" : "audio", label: region.label.slice(0, 200),
+                track_label: trackLabel.slice(0, 200), position: region.position, seconds: clipSeconds,
+                ...(ClipTasks.includes(task) ? {
+                    region: UUID.toString(region.uuid), duration: region.duration,
+                    unit: region.trackBoxAdapter.mapOr(track => UUID.toString(track.audioUnit.address.uuid), undefined)
+                } : {})
+            },
+            placement: {
+                region: UUID.toString(box.address.uuid), unit: UUID.toString(unit.address.uuid), position: region.position
+            },
+            idempotency_key: `k${UUID.toString(box.address.uuid).replaceAll("-", "").slice(0, 32)}`
+        }))
+        if (submitted.status === "rejected" || isAbsent(submitted.value)) {
+            project.editing.modify(() => project.api.deleteAudioUnit(unit))
+            const message = submitted.status === "resolved" ? "Nitro could not be reached."
+                : submitted.error instanceof Error ? submitted.error.message : String(submitted.error)
+            await RuntimeNotifier.info({headline: "Nitro AI", message})
+            return false
+        }
+        if (isDefined(enginesCache)) {enginesCache.at = 0}
+        relabel(project, UUID.toString(box.address.uuid), placeholderLabel(submitted.value))
+        follow(submitted.value)
+        return true
     }
-    enginesCache = null
-    relabel(project, UUID.toString(box.address.uuid), placeholderLabel(submitted.value))
-    follow(submitted.value)
+    const submitted = await submit(request)
+    if (submitted && request.ownDrums) {
+        const soundsEngine = list.find(engine => engine.tasks.includes("sounds"))
+        if (isAbsent(soundsEngine)) {
+            return RuntimeNotifier.info({headline: "Nitro AI", message: "No engine on this Desk can do that yet."})
+        }
+        const [low, high] = soundsEngine.seconds
+        await submit({...request, task: "sounds", engine: soundsEngine.id, split: true, ownDrums: false,
+            seconds: Math.min(high, Math.max(low, clipSeconds))})
+    }
 }
 
 export namespace NitroGenerate {
     export const attach = (service: StudioService, key: string): void => {
         attached = {key, service}
+        engines().catch(console.warn)
         resume().catch(console.warn)
     }
 
@@ -670,12 +884,16 @@ export namespace NitroGenerate {
 
     export const menu = (service: StudioService, region: AnyRegionBoxAdapter): MenuItem =>
         MenuItem.default({label: "Nitro AI", separatorBefore: true, hidden: isAbsent(attached)})
-            .setRuntimeChildrenProcedure(parent => parent.addMenuItem(...Order.map(task =>
-                MenuItem.default({label: Tasks[task].menu})
-                    .setTriggerProcedure(() => {
-                        start(service, region, task).catch(error => {
-                            console.warn(error)
-                            RuntimeNotifier.info({headline: "Nitro AI", message: String(error?.message ?? error)}).finally()
-                        })
-                    }))))
+            .setRuntimeChildrenProcedure(parent => {
+                engines().catch(console.warn)
+                const available = ClipTasks.filter(task => enginesCache?.engines.some(engine => engine.tasks.includes(task)))
+                parent.addMenuItem(...[...Order, ...available].map(task =>
+                    MenuItem.default({label: Tasks[task].menu, separatorBefore: task === available[0]})
+                        .setTriggerProcedure(() => {
+                            start(service, region, task).catch(error => {
+                                console.warn(error)
+                                RuntimeNotifier.info({headline: "Nitro AI", message: String(error?.message ?? error)}).finally()
+                            })
+                        })))
+            })
 }
