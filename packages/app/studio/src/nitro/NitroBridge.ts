@@ -11,8 +11,11 @@ type Session = { key: string, revision: number, service: StudioService, writable
 const LeaseMillis = 10_000
 const StorageKey = "nitro-daw-project"
 const WriteHeaders = {"x-nitro-daw": "1"}
-// The exact source this editor is built from: upstream openDAW plus the Nitro overlay (AGPL section 13).
-const SourceUrl = "https://github.com/joeyxd/SoleanDaw/tree/nitro/daw"
+// The exact source this editor is built from (AGPL section 13). Nitro's image build names its commit of this
+// repository; a local build links the trunk.
+const SourceCommit: unknown = import.meta.env.VITE_NITRO_COMMIT
+const SourceUrl = "https://github.com/joeyxd/SoleanDaw/tree/" +
+    (typeof SourceCommit === "string" && /^[0-9a-f]{40}$/.test(SourceCommit) ? SourceCommit : "nitro/daw")
 
 let session: Nullable<Session> = null
 let label: Nullable<HTMLElement> = null
