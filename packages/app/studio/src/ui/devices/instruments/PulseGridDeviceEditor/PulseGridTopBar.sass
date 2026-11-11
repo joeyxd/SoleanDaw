@@ -1,0 +1,46 @@
+component
+  display: flex
+  flex-wrap: wrap
+  align-items: center
+  gap: 8px
+
+  > .brand
+    flex: 1 1 240px
+    gap: 8px
+    min-width: 0
+    padding: 6px 10px
+    box-sizing: border-box
+
+    > svg
+      flex: 0 0 auto
+      font-size: 26px
+      color: var(--pg-drums)
+      filter: drop-shadow(0 0 6px #2bfdff66)
+
+    > strong
+      font-size: 19px
+      letter-spacing: -0.5px
+
+    > .name
+      min-width: 0
+      overflow: hidden
+      text-overflow: ellipsis
+      white-space: nowrap
+      color: var(--pg-muted)
+      cursor: text
+
+  > .kit > button
+    min-width: 80px
+    justify-content: space-between
+
+  > .pg-group > .play
+    --pg-active: var(--pg-play)
+    --pg-glow: #00a07080
+    min-width: 56px
+    color: var(--pg-fg)
+
+    > label
+      font-size: 21px
+
+  > .history
+    margin-left: auto

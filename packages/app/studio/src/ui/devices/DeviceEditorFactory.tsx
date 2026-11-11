@@ -76,6 +76,7 @@ import {
     WclapInstrumentBoxAdapter,
     PitchDeviceBoxAdapter,
     InstrumentCompositeBoxAdapter,
+    PulseGridDevice,
     PlayfieldDeviceBoxAdapter,
     PlayfieldSampleBoxAdapter,
     RevampDeviceBoxAdapter,
@@ -114,6 +115,7 @@ import {ApparatDeviceEditor} from "./instruments/ApparatDeviceEditor"
 import {NanoDeviceEditor} from "./instruments/NanoDeviceEditor"
 import {PlayfieldDeviceEditor} from "./instruments/PlayfieldDeviceEditor"
 import {InstrumentCompositeDeviceEditor} from "./instruments/InstrumentCompositeDeviceEditor"
+import {PulseGridDeviceEditor} from "./instruments/PulseGridDeviceEditor"
 import {StereoToolDeviceEditor} from "./audio-effects/StereoToolDeviceEditor"
 import {AudioSinkDeviceEditor} from "./audio-effects/AudioSinkDeviceEditor"
 import {PlayfieldSampleEditor} from "./instruments/PlayfieldSampleEditor"
@@ -247,7 +249,12 @@ export namespace DeviceEditorFactory {
                                   deviceHost={deviceHost}/>
             ),
             visitInstrumentCompositeBox: (box: InstrumentCompositeBox): JsxValue => (
-                <InstrumentCompositeDeviceEditor lifecycle={lifecycle}
+                PulseGridDevice.find(box).nonEmpty()
+                    ? <PulseGridDeviceEditor lifecycle={lifecycle}
+                                             service={service}
+                                             adapter={service.project.boxAdapters.adapterFor(box, InstrumentCompositeBoxAdapter)}
+                                             deviceHost={deviceHost}/>
+                    : <InstrumentCompositeDeviceEditor lifecycle={lifecycle}
                                                  service={service}
                                                  adapter={service.project.boxAdapters.adapterFor(box, InstrumentCompositeBoxAdapter)}
                                                  deviceHost={deviceHost}/>

@@ -1,0 +1,75 @@
+component
+  display: flex
+  flex-direction: column
+  gap: 10px
+  width: 300px
+  min-height: 0
+  box-sizing: border-box
+  padding: 12px
+  overflow: hidden
+  color: #efeaff
+  background: linear-gradient(145deg, #12163a, #050517)
+  font-size: 12px
+
+  > .heading
+    display: flex
+    align-items: center
+    justify-content: space-between
+
+    > strong
+      font-size: 17px
+
+    > .open
+      --color: #efeaff
+      --color-active: #efeaff
+      border-radius: 8px
+      background: #a22ada
+      box-shadow: 0 0 12px #a22ada80
+
+      > label
+        min-height: 30px
+        padding: 0 16px
+        cursor: pointer !important
+
+  > .summary
+    color: #a7a3c9
+    font-size: 11px
+    white-space: nowrap
+
+  > .mini
+    --color: #efeaff
+    --color-active: #efeaff
+    display: block
+    flex: 1
+    min-height: 0
+    overflow: auto
+    border: 1px solid #262a52
+    border-radius: 8px
+    background: #0b0e23
+
+    > label
+      display: block
+      height: auto
+      min-height: 100%
+      padding: 8px
+      box-sizing: border-box
+      cursor: pointer !important
+
+      > .mini-content
+        display: flex
+        flex-direction: column
+        gap: 4px
+
+        > .mini-row
+          display: grid
+          gap: 2px
+          min-height: 7px
+
+          > span
+            height: 7px
+            border-radius: 2px
+            background: #262a52
+
+            &.lit
+              background: currentColor
+              box-shadow: 0 0 4px currentColor

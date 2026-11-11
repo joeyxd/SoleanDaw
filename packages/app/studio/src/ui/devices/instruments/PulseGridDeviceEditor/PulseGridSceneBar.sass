@@ -1,0 +1,29 @@
+component
+  display: flex
+  flex-wrap: wrap
+  align-items: center
+  gap: 8px
+
+  > .scene
+    min-width: 0
+
+    > button
+      width: 145px
+      min-width: 0
+      justify-content: space-between
+
+      > span:first-child
+        overflow: hidden
+        text-overflow: ellipsis
+        white-space: nowrap
+
+  > .variation
+    gap: 8px
+    padding-right: 4px
+
+    > .variations
+      display: flex
+      gap: 4px
+
+      > .pg-button
+        min-width: 32px

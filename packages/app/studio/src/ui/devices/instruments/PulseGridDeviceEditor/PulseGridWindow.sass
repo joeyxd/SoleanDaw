@@ -1,0 +1,116 @@
+component
+  --pg-ground: #050517
+  --pg-panel: #0b0e23
+  --pg-panel-2: #12163a
+  --pg-line: #262a52
+  --pg-fg: #efeaff
+  --pg-muted: #a7a3c9
+  --pg-violet: #a22ada
+  --pg-violet-ink: #cfa8ff
+  --pg-drums: #2bfdff
+  --pg-melody: #a22ada
+  --pg-play: #00a070
+  --pg-rec: #fd5e7f
+  --pg-radius: 10px
+  position: relative
+  display: flex
+  flex-direction: column
+  gap: 8px
+  width: 100%
+  height: 100%
+  min-width: 0
+  min-height: 0
+  box-sizing: border-box
+  overflow: hidden
+  padding: 10px
+  background: radial-gradient(ellipse at top left, #a22ada18, transparent 55%), var(--pg-ground)
+  color: var(--pg-fg)
+  font-size: 12px
+  isolation: isolate
+
+  > :not(.main):not(.notice)
+    flex: 0 0 auto
+
+  > .main
+    flex: 1
+    min-height: 0
+    overflow: auto
+
+  .pg-group
+    display: flex
+    align-items: center
+    min-height: 36px
+    border: 1px solid var(--pg-line)
+    border-radius: var(--pg-radius)
+    background: var(--pg-panel)
+
+  .pg-label
+    padding-left: 10px
+    color: var(--pg-muted)
+    white-space: nowrap
+
+  .pg-button, .pg-group > button
+    --color: var(--pg-fg)
+    --color-active: var(--pg-fg)
+    color: var(--pg-fg)
+    min-height: 36px
+    min-width: 36px
+    box-sizing: border-box
+    border-radius: var(--pg-radius)
+    background: linear-gradient(180deg, var(--pg-panel-2), var(--pg-panel))
+    font: inherit
+
+    > label
+      min-height: 36px
+      height: auto
+      box-sizing: border-box
+      padding: 0 10px
+      cursor: pointer !important
+
+    &:hover
+      box-shadow: inset 0 0 0 1px var(--pg-violet-ink)
+
+    &:focus-visible
+      outline: 1px solid var(--pg-violet-ink)
+      outline-offset: 2px
+
+    &.active
+      background: var(--pg-active, var(--pg-violet))
+      box-shadow: 0 0 12px var(--pg-glow, #a22ada80)
+
+    &.disabled
+      opacity: 0.3
+      pointer-events: none
+
+  .pg-group > button
+    display: flex
+    align-items: center
+    gap: 8px
+    padding: 0 12px
+    cursor: pointer
+
+  > .notice
+    position: absolute
+    z-index: 10
+    bottom: 16px
+    left: 50%
+    transform: translateX(-50%) translateY(8px)
+    max-width: calc(100% - 48px)
+    box-sizing: border-box
+    padding: 10px 16px
+    border: 1px solid var(--pg-violet)
+    border-radius: var(--pg-radius)
+    background: var(--pg-panel-2)
+    box-shadow: 0 4px 24px #0008
+    color: var(--pg-fg)
+    opacity: 0
+    pointer-events: none
+    transition: opacity 250ms, transform 250ms
+
+    &.visible
+      opacity: 1
+      transform: translateX(-50%) translateY(0)
+
+    &.error
+      color: var(--pg-rec)
+      border-color: var(--pg-rec)

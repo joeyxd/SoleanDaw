@@ -172,3 +172,48 @@ each lane pattern it changed, in lane order (with the name; for a slot that does
 with `scene <n> <V> `); the settings line for `setSetting`; the `playing` line for `setPlaying`; the `scenes`
 line for `nameScene`; the lane's line of the `lanes` block for `setLane`, `setLaneMix`, `addLane`, `moveLane`
 and `setLaneSound`; nothing for `removeLane`.
+
+## 6. What the screen does (`PulseGridActions`, `PulseGridView`, `PulseGridKits`)
+
+The screen has no way of its own to change a PulseGrid. Every control calls one function of `PulseGridActions`
+and sends the ops it returns, so whatever a person does on the screen an agent can do with the same ops. A test
+lists every action against its ops; a new action does not compile until it is listed there.
+
+| on the screen | action | ops |
+|---|---|---|
+| the name | `rename` | `setSetting name` |
+| Length, Swing, Groove, Probability, Humanize | `setLength`, `setSwing`, `setGroove`, `setProbability`, `setHumanize` | `setSetting` |
+| scene arrows and menu | `pickScene` | `setPlaying` |
+| variation buttons | `pickVariation` | `setPlaying` |
+| variation `+` | `newVariation` | `copyVariation`, `setPlaying` |
+| a step, pressed or painted | `setStep` | `setStep` |
+| a step's menu: accent, velocity, chance | `setStepValues` | `setStep` |
+| M, S | `setMute`, `setSolo` | `setLaneMix` |
+| a lane's name | `renameLane` | `setLane` |
+| the lane handle | `moveLane` | `moveLane` |
+| a lane's menu | `clearLane`, `shiftLane`, `removeLane`, `setLaneSound` | `clear`, `rotate`, `removeLane`, `setLaneSound` |
+| Add lane | `addDrumLane` | `addLane` |
+| Kit menu | `loadKit`, `loadBeat` | `setLaneSound`; `setSetting`, `setPatternLength`, `setPatternText`, `clear` |
+
+Play, stop, the tempo, undo and redo are the DAW's own and are not ops.
+
+`PulseGridView` is what the screen reads from the document so that no component works it out for itself: the
+variations to offer (A always, the one that plays, and every one of the playing scene that holds anything), the
+first empty variation, the steps of the pattern of a lane that plays now with its effective length, and the
+step that plays at a song position (a step is 240 pulses).
+
+One drag is one undo step: the screen sends every change of a drag unmarked and marks once on release.
+
+### Kits and beats
+
+A kit is five samples: Kick, Snare, Clap, Hat, Perc. Loading one changes sounds only. Each drum goes to the
+drum lane named after it (`Hi-Hat` and `HH` are the hat), else to the lane that plays it (a lane renamed `Boom`
+that plays `TR-808 Bass Drum` is the kick). A drum without such a lane gets none, and a lane that is none of the
+five (a tom) keeps its sound. Only when nothing is found do the first five drum lanes take the kit in order.
+
+A beat is 16 cells per drum in the grid form of section 4. Loading one writes the pattern that plays now on
+those same lanes, clears the drums it does not use, sets the swing it is meant for, and touches no other lane.
+When the sequencer's length is not 16 the lanes get an own length of 16, so the beat stays whole.
+
+A new drum lane lands under the last drum lane and is named after its sample without the machine
+(`TR-808 Cowbell` is `Cowbell`), with a number when that name is taken.

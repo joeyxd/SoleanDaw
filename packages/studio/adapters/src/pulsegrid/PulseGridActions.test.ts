@@ -105,6 +105,9 @@ describe("PulseGridActions", () => {
         const f = fixture()
         f.ok(PulseGridActions.setStep(f.lane("Kick").id, 1, true))
         expect(PulseGridView.usedVariations(f.read())).toEqual(["A"])
+        f.ok([...PulseGridActions.pickScene(2), ...PulseGridActions.pickVariation("C")])
+        expect(PulseGridView.usedVariations(f.read())).toEqual(["A", "C"])
+        f.ok([...PulseGridActions.pickScene(1), ...PulseGridActions.pickVariation("A")])
         f.ok(PulseGridActions.newVariation(f.read()))
         expect(f.read().variation).toBe("B")
         expect(f.line("Kick")).toBe("Kick |x--- ---- ---- ----|")
@@ -172,10 +175,27 @@ describe("PulseGridKits", () => {
         expect(f.line("Kick")).toBe("Kick |x--- ---- ---- ----|")
     })
 
+    it("still knows a renamed lane by what it plays, and leaves a drum that is none of the five alone", () => {
+        const f = fixture()
+        const tom = {uuid: "0d345936-3a4b-4542-b710-278bde1e101e", name: "TR-808 Low Tom", duration: 1}
+        f.ok([{op: "setLane", lane: "Kick", name: "Boom"}, {op: "setLane", lane: "Hat", name: "Tick"}])
+        f.ok(PulseGridActions.addDrumLane(f.read(), tom))
+        const kit = PulseGridKits.All[1]
+        f.ok(PulseGridActions.loadKit(f.read(), kit))
+        expect(f.lane("Boom").sound?.sample?.uuid).toBe(kit.sounds.Kick.uuid)
+        expect(f.lane("Tick").sound?.sample?.uuid).toBe(kit.sounds.Hat.uuid)
+        expect(f.lane("Low Tom").sound?.sample?.uuid).toBe(tom.uuid)
+        f.ok(PulseGridActions.loadKit(f.read(), PulseGridKits.All[4]))
+        expect(f.lane("Boom").sound?.sample?.uuid).toBe(PulseGridKits.All[4].sounds.Kick.uuid)
+    })
+
     it("falls back to the order of the drum lanes when none has a drum's name", () => {
         const f = fixture()
-        f.ok(["Kick", "Snare", "Clap", "Hat", "Perc"].map((name, index) =>
-            ({op: "setLane", lane: name, name: `Lane ${index + 1}`}) as PulseGridOp))
+        const silent = {uuid: "7d4a36ea-c0bb-429f-b85b-b9220988f5a2", name: "Texture 01", duration: 3}
+        f.ok(["Kick", "Snare", "Clap", "Hat", "Perc"].flatMap((name, index): Array<PulseGridOp> => [
+            {op: "setLane", lane: name, name: `Lane ${index + 1}`},
+            {op: "setLaneSound", lane: `Lane ${index + 1}`, sound: PulseGridKits.sound({...silent, uuid: silent.uuid.slice(0, -1) + index})}
+        ]))
         const kit = PulseGridKits.All[2]
         f.ok(PulseGridActions.loadKit(f.read(), kit))
         expect(f.lane("Lane 1").sound?.sample?.uuid).toBe(kit.sounds.Kick.uuid)

@@ -1,0 +1,44 @@
+component
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 12px
+  min-width: 100px
+  min-height: 36px
+  padding: 4px 10px
+  box-sizing: border-box
+  border: 1px solid var(--pg-line)
+  border-radius: var(--pg-radius)
+  background: linear-gradient(180deg, var(--pg-panel-2), var(--pg-panel))
+  color: var(--pg-fg)
+  cursor: ns-resize
+  touch-action: none
+  user-select: none
+  font-variant-numeric: tabular-nums
+
+  &:focus-visible
+    outline: 1px solid var(--pg-violet-ink)
+    outline-offset: 2px
+
+  > .readout
+    display: flex
+    flex-direction: column
+    gap: 2px
+    white-space: nowrap
+
+    > .label
+      color: var(--pg-muted)
+      font-size: 11px
+
+    > .value
+      font-size: 13px
+      font-weight: 600
+
+  > .ring
+    width: 25px
+    height: 25px
+    flex: 0 0 25px
+    border-radius: 50%
+    background: conic-gradient(from 225deg, var(--pg-violet-ink) 0deg, var(--pg-violet) var(--pg-turn), var(--pg-line) var(--pg-turn) 270deg, transparent 270deg)
+    mask: radial-gradient(circle, transparent 52%, black 56%)
+    filter: drop-shadow(0 0 4px var(--pg-violet))

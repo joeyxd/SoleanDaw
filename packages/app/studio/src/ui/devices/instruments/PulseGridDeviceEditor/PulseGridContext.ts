@@ -27,9 +27,11 @@ export type PulseGridContext = {
     readonly notice: MutableObservableValue<Optional<PulseGridNotice>>
     // Applies the ops as one undo step and answers what each one did. A refused op is shown as a notice; the
     // ops before it stay. With `mark` false the change joins the gesture in progress: call `mark()` when the
-    // gesture ends (pointer up), so one drag is one undo step.
+    // gesture ends (pointer up), so one drag is one undo step. When the gesture is cancelled instead (Escape),
+    // `revert()` takes back what it sent so far and leaves no undo step behind.
     send(ops: ReadonlyArray<PulseGridOp>, mark?: boolean): ReadonlyArray<PulseGridOpResult>
     mark(): void
+    revert(): void
 }
 
 export namespace PulseGridContext {
@@ -76,7 +78,11 @@ export namespace PulseGridContext {
                 refresh()
                 return results
             },
-            mark: () => editing.mark()
+            mark: () => editing.mark(),
+            revert: () => {
+                editing.revertPending()
+                refresh()
+            }
         }
     }
 }

@@ -106,17 +106,28 @@ export namespace PulseGridKits {
     export const sound = (sample: PulseGridSample): PulseGridSoundInput => ({instrument: "Nano", sample})
 
     // Which drum lane is which drum. By name first: the lane called Kick is the kick wherever it sits ("Hi-Hat"
-    // and "HH" are the hat). A drum nobody is named after gets no lane. Only when no lane has such a name do
-    // the first five drum lanes count in order.
+    // and "HH" are the hat). Then by what the lane plays: a lane renamed "Boom" that plays "TR-808 Bass Drum"
+    // is still the kick. A drum that no lane is named after or plays gets no lane, and a lane that is none of
+    // the five drums (a tom) is left alone. Only when nothing is found do the first five drum lanes count in order.
     export const lanesByRole = (doc: PulseGridDoc): Map<PulseGridRole, PulseGridLaneDoc> => {
         const drums = doc.lanes.filter(lane => lane.kind === "drum")
-        const named = new Map<PulseGridRole, PulseGridLaneDoc>()
-        for (const {role, match} of Roles) {
-            const lane = drums.find(lane => match.test(lane.name) && !Array.from(named.values()).includes(lane))
-            if (lane !== undefined) {named.set(role, lane)}
+        const found = new Map<PulseGridRole, PulseGridLaneDoc>()
+        const free = (lane: PulseGridLaneDoc): boolean => !Array.from(found.values()).includes(lane)
+        const plays = (lane: PulseGridLaneDoc): string => `${lane.sound?.label ?? ""} ${lane.sound?.sample?.name ?? ""}`
+        for (const text of [(lane: PulseGridLaneDoc) => lane.name, plays]) {
+            for (const {role, match} of Roles) {
+                if (found.has(role)) {continue}
+                const lane = drums.find(lane => free(lane) && match.test(text(lane)))
+                if (lane !== undefined) {found.set(role, lane)}
+            }
         }
-        if (named.size > 0) {return named}
-        return new Map(Roles.slice(0, drums.length).map(({role}, index) => [role, drums[index]]))
+        if (found.size === 0) {
+            return new Map(Roles.slice(0, drums.length).map(({role}, index) => [role, drums[index]]))
+        }
+        return new Map(Roles.flatMap(({role}) => {
+            const lane = found.get(role)
+            return lane === undefined ? [] : [[role, lane] as const]
+        }))
     }
 
     // Loading a kit changes sounds only: names, patterns, mix and every other lane stay.

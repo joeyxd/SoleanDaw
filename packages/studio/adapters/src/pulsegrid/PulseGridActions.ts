@@ -18,9 +18,10 @@ const MachinePrefix = /^(TR-\d+|909|LinnDrum|Linn 9000|DMX|DrumTraks|Drumulator|
 export type PulseGridStep = {velocity: int, chance: int, accent: boolean, notes: int}
 
 export namespace PulseGridView {
-    // The variations of the playing scene that hold anything, plus the one that plays.
+    // The variations the screen offers: A always, the one that plays, and every one of the playing scene that
+    // holds anything.
     export const usedVariations = (doc: PulseGridDoc): Array<PulseGridVariation> => Variations.filter(variation =>
-        variation === doc.variation || doc.lanes.some(lane => lane.patterns.some(pattern =>
+        variation === "A" || variation === doc.variation || doc.lanes.some(lane => lane.patterns.some(pattern =>
             pattern.scene === doc.scene && pattern.variation === variation)))
 
     export const freeVariation = (doc: PulseGridDoc): Optional<PulseGridVariation> => {
