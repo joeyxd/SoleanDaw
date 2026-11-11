@@ -23,6 +23,8 @@ import {IconSymbol, Pointers, VoicingMode} from "@opendaw/studio-enums"
 import {DeviceManualUrls} from "../DeviceManualUrls"
 import {InstrumentFactory} from "./InstrumentFactory"
 import {TrackType} from "../timeline/TrackType"
+import {PulseGridFactory, PulseGridLaneSpec} from "../pulsegrid/PulseGridFactory"
+import {PulseGridDevice} from "../pulsegrid/PulseGridDevice"
 
 export namespace InstrumentFactories {
     export const Tape: InstrumentFactory<void, TapeDeviceBox> = {
@@ -285,9 +287,9 @@ export namespace InstrumentFactories {
         }
     }
 
-    // MIDI Output is wired at unit level only
+    // MIDI Output is wired at unit level only; a PulseGrid is a composite of its own and is not nested
     export const isLayerInstrument = (factory: InstrumentFactory<any, any>): boolean =>
-        factory.trackType === TrackType.Notes && factory !== MIDIOutput
+        factory.trackType === TrackType.Notes && factory !== MIDIOutput && factory !== PulseGrid
 
     export const Tubular: InstrumentFactory<void, TubularDeviceBox> = {
         defaultName: "Tubular",
@@ -310,12 +312,35 @@ export namespace InstrumentFactories {
             })
     }
 
-    export const Named = {Apparat, Cubed, InstrumentComposite, Neon, Tubular, MIDIOutput, Nano, Playfield, Soundfont, Tape, Vaporisateur, Wclap}
+    // The step sequencer: an InstrumentComposite whose cells are lanes (../pulsegrid/SPEC.md). The attachment is
+    // the lanes to start with; left out, the default kit. PulseGridFactory imports this file, so it is only
+    // touched inside create, never while the modules load.
+    export const PulseGrid: InstrumentFactory<ReadonlyArray<PulseGridLaneSpec>, InstrumentCompositeBox> = {
+        defaultName: "PulseGrid",
+        defaultIcon: IconSymbol.DrumSet,
+        briefDescription: "Step sequencer",
+        description: "Step sequencer with drum and melodic lanes, each lane its own instrument",
+        manualPage: DeviceManualUrls.InstrumentComposite,
+        trackType: TrackType.Notes,
+        create: (boxGraph: BoxGraph<BoxIO.TypeMap>,
+                 host: Field<Pointers.InstrumentHost | Pointers.AudioOutput>,
+                 name: string,
+                 icon: IconSymbol,
+                 attachment?: ReadonlyArray<PulseGridLaneSpec>): InstrumentCompositeBox => {
+            const composite = PulseGridFactory.create(boxGraph, host, name, attachment ?? PulseGridFactory.DefaultKit)
+            composite.icon.setValue(IconSymbol.toName(icon))
+            return composite
+        }
+    }
+
+    export const Named = {Apparat, Cubed, InstrumentComposite, Neon, Tubular, MIDIOutput, Nano, Playfield, PulseGrid, Soundfont, Tape, Vaporisateur, Wclap}
     export type Keys = keyof typeof Named
     export const Sorted: ReadonlyArray<[Keys, InstrumentFactory]> = (Object.entries(Named) as Array<[Keys, InstrumentFactory]>)
         .sort(([, a], [, b]) => a.defaultName.localeCompare(b.defaultName))
 
     export const keyOfBox = (box: Box): Optional<Keys> => {
+        // a PulseGrid is an InstrumentComposite whose cells carry step lanes
+        if (box instanceof InstrumentCompositeBox && PulseGridDevice.find(box).nonEmpty()) {return "PulseGrid"}
         const stripped = box.name.replace(/(Device|Instrument)?Box$/, "")
         return Object.hasOwn(Named, stripped) ? stripped as Keys : undefined
     }

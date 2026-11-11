@@ -2,9 +2,7 @@ import {BoxGraph, Field} from "@opendaw/lib-box"
 import {int, Option, UUID} from "@opendaw/lib-std"
 import {AudioFileBox, InstrumentCompositeBox, InstrumentCompositeCellBox, PulseGridBox, PulseGridLaneDeviceBox} from "@opendaw/studio-boxes"
 import {IconSymbol, Pointers} from "@opendaw/studio-enums"
-import {InstrumentFactory} from "../factories/InstrumentFactory"
 import {InstrumentFactories} from "../factories/InstrumentFactories"
-import {TrackType} from "../timeline/TrackType"
 import {TubularPreset} from "../devices/instruments/Tubular/TubularPreset"
 import {PulseGridDevice, PulseGridLane} from "./PulseGridDevice"
 import {PulseGridError, PulseGridSoundInput} from "./PulseGridTypes"
@@ -141,17 +139,6 @@ export namespace PulseGridFactory {
         {name: "Synth", kind: "melodic", hue: 301, sound: {instrument: "Tubular", voice: {name: "Synth Bass", patch: synthBass}}},
         {name: "Marimba", kind: "melodic", hue: 35, sound: {instrument: "Tubular", voice: {name: "Marimba", patch: marimba}}}
     ]
-
-    export const Instrument: InstrumentFactory<ReadonlyArray<PulseGridLaneSpec>, InstrumentCompositeBox> = {
-        defaultName: "PulseGrid", defaultIcon: IconSymbol.Stack, trackType: TrackType.Notes,
-        briefDescription: "Step sequencer", description: "Shared step sequencer with drum and melodic lanes",
-        manualPage: InstrumentFactories.InstrumentComposite.manualPage,
-        create: (graph, host, name, icon, attachment) => {
-            const composite = create(graph, host, name, attachment ?? DefaultKit)
-            composite.icon.setValue(IconSymbol.toName(icon))
-            return composite
-        }
-    }
 
     export const create = (graph: BoxGraph, host: Field<Pointers.InstrumentHost | Pointers.AudioOutput>,
                            name: string, lanes?: ReadonlyArray<PulseGridLaneSpec>): InstrumentCompositeBox => {

@@ -306,7 +306,7 @@ export namespace AudioUnitImpls {
 
     export const createPulseGridUnit = (context: Context, label: Optional<string>,
                                         lanes: Optional<ReadonlyArray<PulseGridLaneSpec>>): InstrumentAudioUnitImpl => {
-        const factory = PulseGridFactory.Instrument
+        const factory = InstrumentFactories.PulseGrid
         return createUnit(context, factory, label,
             (host, name) => factory.create(context.boxGraph, host, name, factory.defaultIcon, lanes))
     }

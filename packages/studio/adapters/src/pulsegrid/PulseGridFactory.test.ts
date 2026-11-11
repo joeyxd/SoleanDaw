@@ -4,6 +4,7 @@ import {UUID} from "@opendaw/lib-std"
 import {AudioFileBox, AudioUnitBox, DelayDeviceBox, NanoDeviceBox, PulseGridBox, TubularDeviceBox} from "@opendaw/studio-boxes"
 import {IconSymbol} from "@opendaw/studio-enums"
 import {ProjectSkeleton} from "../project/ProjectSkeleton"
+import {InstrumentFactories} from "../factories/InstrumentFactories"
 import {TubularPreset} from "../devices/instruments/Tubular/TubularPreset"
 import {PulseGridDevice} from "./PulseGridDevice"
 import {PulseGridDocs} from "./PulseGridDocs"
@@ -23,7 +24,7 @@ const fixture = (specs: ReadonlyArray<PulseGridLaneSpec> = kit, instrument = fal
         box.index.setValue(1)
     })
     const composite = instrument
-        ? PulseGridFactory.Instrument.create(graph, unit.input, "PulseGrid", IconSymbol.Stack)
+        ? InstrumentFactories.PulseGrid.create(graph, unit.input, "PulseGrid", IconSymbol.DrumSet)
         : PulseGridFactory.create(graph, unit.input, "Test grid", specs)
     graph.endTransaction()
     const device = () => PulseGridDevice.find(composite).unwrap()
@@ -93,7 +94,7 @@ describe("PulseGridFactory", () => {
     it("provides an InstrumentFactory with the default attachment and reuses sample identity", () => {
         const defaults = fixture(kit, true)
         defaults.order("Kick", "Snare", "Clap", "Hat", "Perc", "Synth", "Marimba")
-        expect(PulseGridFactory.Instrument.defaultName).toBe("PulseGrid")
+        expect(InstrumentFactories.PulseGrid.defaultName).toBe("PulseGrid")
         const f = fixture([kit[0], {...kit[0], name: "Second kick"}])
         expect(f.graph.boxes().filter(box => box instanceof AudioFileBox)).toHaveLength(1)
         const files = f.device().lanes.map(lane => (lane.instrument.unwrap() as NanoDeviceBox).file.targetVertex.unwrap().box)
