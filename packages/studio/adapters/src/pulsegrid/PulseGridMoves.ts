@@ -1,5 +1,6 @@
 import {int} from "@opendaw/lib-std"
 import {PulseGridError, PulseGridNote, PulseGridNote as Note} from "./PulseGridTypes"
+import {PulseGridScales} from "./PulseGridScales"
 
 const checkSize = (notes: ReadonlyArray<PulseGridNote>): void => {
     if (notes.length > Note.MaxPerPattern) {
@@ -15,6 +16,26 @@ export namespace PulseGridMoves {
         const result = sort(notes.map(note => ({...note, step: ((note.step - 1 + steps) % length + length) % length + 1})))
         checkSize(result)
         return result
+    }
+
+    export const transpose = (notes: ReadonlyArray<PulseGridNote>, by: int, unit: "semitones" | "degrees",
+                              root: int, scale: int): Array<PulseGridNote> => sort(notes.map(note => {
+        const pitch = unit === "degrees" ? PulseGridScales.shift(root, scale, note.pitch, by) : note.pitch + by
+        if (pitch === undefined || pitch < 0 || pitch > 127) {
+            throw new PulseGridError(`pitch ${note.pitch} transposed by ${by} ${unit} is not allowed; expected 0..127`)
+        }
+        return {...note, pitch}
+    }))
+
+    export const toScale = (notes: ReadonlyArray<PulseGridNote>, root: int, scale: int): Array<PulseGridNote> => {
+        const landed = new Map<string, PulseGridNote>()
+        for (const note of notes) {
+            const pitch = PulseGridScales.snap(root, scale, note.pitch)
+            const key = `${note.step}:${pitch}`
+            const previous = landed.get(key)
+            if (previous === undefined || note.velocity > previous.velocity) {landed.set(key, {...note, pitch})}
+        }
+        return sort([...landed.values()])
     }
 
     export const double = (notes: ReadonlyArray<PulseGridNote>, length: int): Array<PulseGridNote> => {

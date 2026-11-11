@@ -1,5 +1,6 @@
 import {int} from "@opendaw/lib-std"
 import {MidiKeys} from "@opendaw/lib-dsp"
+import {PulseGridScales} from "./PulseGridScales"
 import {
     PulseGridDoc, PulseGridError, PulseGridLaneDoc, PulseGridNote, PulseGridOp, PulseGridVariation
 } from "./PulseGridTypes"
@@ -232,7 +233,7 @@ export namespace PulseGridText {
     export const formatSettings = (doc: PulseGridDoc): string => {
         const s = doc.settings
         const root = MidiKeys.Names.English[s.root]
-        return `length ${s.length}  swing ${s.swing}  groove ${s.groove}  probability ${s.probability}  humanize ${s.humanize}  accent ${s.accentAmount}  key ${root}  scale ${s.scale}`
+        return `length ${s.length}  swing ${s.swing}  groove ${s.groove}  probability ${s.probability}  humanize ${s.humanize}  accent ${s.accentAmount}  key ${root}  scale ${PulseGridScales.byIndex(s.scale).id}`
     }
 
     export const formatPlaying = (doc: PulseGridDoc): string => `playing scene ${doc.scene} ${doc.variation}`
@@ -328,8 +329,14 @@ export namespace PulseGridText {
                                 if (!/^[A-G](?:#)?$/.test(value)) error(`key ${value} is not allowed; expected C, C#, D, D#, E, F, F#, G, G#, A, A#, or B`)
                                 return PulseGridText.parsePitch(`${value}0`) % 12
                             })()
-                            : key === "length" || key === "scale"
-                                ? parseInteger(value, key, ...(ranges[key] ?? [0, Number.MAX_SAFE_INTEGER] as [number, number]))
+                            : key === "scale"
+                                ? (() => {
+                                    const scale = PulseGridScales.find(value)
+                                    if (scale === undefined) {return error(`scale ${value} is not allowed; expected ${PulseGridScales.All.map(scale => scale.id).join(", ")}`)}
+                                    return scale.index
+                                })()
+                            : key === "length"
+                                ? parseInteger(value, key, ...ranges[key])
                                 : parseInteger(value, key, ...ranges[key], /^\d+(\.\d+)?$/) // amounts may carry decimals
                         found.push({op: "setSetting", key: setting as keyof PulseGridDoc["settings"], value: parsed})
                     }

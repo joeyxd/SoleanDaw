@@ -41,7 +41,14 @@ export namespace PulseGridLaneMenus {
             .setTriggerProcedure(() => context.send(PulseGridActions.shiftLane(lane.id, -1))),
         MenuItem.default({label: "Shift right"})
             .setTriggerProcedure(() => context.send(PulseGridActions.shiftLane(lane.id, 1)))
-    ], [
+    ], ...(lane.kind === "melodic" ? [[
+        MenuItem.default({label: "Octave up"})
+            .setTriggerProcedure(() => context.send(PulseGridActions.transposeLane(lane.id, 12))),
+        MenuItem.default({label: "Octave down"})
+            .setTriggerProcedure(() => context.send(PulseGridActions.transposeLane(lane.id, -12))),
+        MenuItem.default({label: "Fit to scale"})
+            .setTriggerProcedure(() => context.send(PulseGridActions.laneToScale(lane.id)))
+    ]] : []), [
         MenuItem.default({label: "Remove lane", selectable: context.doc.getValue().lanes.length > 1})
             .setTriggerProcedure(() => context.send(PulseGridActions.removeLane(lane.id)))
     ]]

@@ -1,0 +1,110 @@
+component
+  position: relative
+  display: grid
+  column-gap: 3px
+  row-gap: 1px
+  isolation: isolate
+  touch-action: none
+  user-select: none
+  background: var(--pg-ground, #070919)
+  overflow: hidden
+
+  &[data-tool="paint"]
+    cursor: crosshair
+
+  &[data-tool="erase"]
+    cursor: not-allowed
+
+  &[data-tool="select"]
+    cursor: crosshair
+
+    > .note
+      cursor: pointer
+
+    > .note.picked
+      cursor: grab
+
+  &[data-tool="listen"]
+    cursor: pointer
+
+  &.resize, &.resize > .note
+    cursor: ew-resize
+
+  > .line
+    background: color-mix(in srgb, var(--lane) 6%, var(--pg-panel, #0b0e23))
+    box-shadow: inset 0 -1px color-mix(in srgb, var(--pg-line, #262a52) 40%, transparent)
+    pointer-events: none
+
+    &.root
+      background: color-mix(in srgb, var(--lane) 15%, var(--pg-panel, #0b0e23))
+
+    &.outside
+      background: repeating-linear-gradient(135deg, transparent 0 3px, rgba(255, 255, 255, 0.035) 3px 4px)
+      opacity: 0.55
+
+  > .col
+    z-index: 1
+    pointer-events: none
+    box-shadow: inset 1px 0 color-mix(in srgb, var(--pg-line, #262a52) 35%, transparent)
+
+    &.beat
+      background: color-mix(in srgb, var(--lane) 4%, transparent)
+
+    &.playing
+      background: rgba(150, 240, 255, 0.18)
+      border-left: 1px solid var(--lane)
+      border-right: 1px solid var(--lane)
+      box-shadow: 0 0 10px color-mix(in srgb, var(--lane) 25%, transparent)
+
+  > .note
+    position: relative
+    z-index: 2
+    min-width: 0
+    box-sizing: border-box
+    justify-self: start
+    border-radius: 3px
+    background: color-mix(in srgb, var(--lane) calc(var(--lv, 1) * 100%), var(--pg-panel-2, #12163a))
+    box-shadow: 0 0 calc(var(--lv, 1) * 8px) color-mix(in srgb, var(--lane) 45%, transparent)
+
+    &.accent
+      box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.92), 0 0 8px color-mix(in srgb, var(--lane) 45%, transparent)
+
+    &.picked
+      outline: 1px solid white
+      outline-offset: -1px
+
+    &.chance::after
+      content: ""
+      position: absolute
+      top: 2px
+      right: 2px
+      border-style: solid
+      border-width: 0 5px 5px 0
+      border-color: transparent rgba(255, 255, 255, 0.9) transparent transparent
+      pointer-events: none
+
+  > .selection
+    position: absolute
+    z-index: 3
+    box-sizing: border-box
+    pointer-events: none
+    border: 1px solid var(--pg-violet, #a22ada)
+    background: color-mix(in srgb, var(--pg-violet, #a22ada) 18%, transparent)
+
+  &.labels
+    min-width: 0
+    background: var(--pg-panel, #0b0e23)
+    color: var(--pg-muted, #a7a3c9)
+    font-size: 9px
+    text-align: right
+
+    > div
+      height: 14px
+      line-height: 14px
+      padding-right: 8px
+
+      &.root
+        color: var(--lane)
+
+      &.outside
+        opacity: 0.45

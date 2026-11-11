@@ -36,6 +36,12 @@ are the letters A to D. Only the stored bytes count from 0, and `PulseGridNotes`
 
 Percents and pan read from a float are rounded to two decimals, so 0.35 reads 35 and not 34.99999.
 
+The key is written by its name (`C`, `F#`), the scale by its id: `major`, `natural-minor`, `harmonic-minor`,
+`melodic-minor`, `dorian`, `phrygian`, `lydian`, `mixolydian`, `locrian`, `pentatonic-major`, `pentatonic-minor`,
+`blues`, `whole-tone`, `diminished`, `augmented` (`PulseGridScales.All`, in the order they are stored as 0 to
+14). Reading also takes `minor` for `natural-minor`, the scale's number, and any case. Section 8 says what key
+and scale do.
+
 The slot of a pattern in the lane's `patterns` array is `(scene - 1) * 4 + variation index` (A is 0).
 The effective length of a pattern is its own length, or the head's length when its own length is 0.
 
@@ -98,7 +104,7 @@ otherwise in double quotes with `\"` and `\\` escapes. In `setPatternText` the n
 ### The whole PulseGrid (`toText`)
 
     PulseGrid "Night drive"
-    length 16  swing 54  groove 20  probability 100  humanize 0  accent 50  key C  scale 0
+    length 16  swing 54  groove 20  probability 100  humanize 0  accent 50  key C  scale natural-minor
     playing scene 1 A
     scenes 1 "Intro"  2 "Drop"
     lanes
@@ -159,6 +165,8 @@ Every op works on steps 1 to the effective length and leaves the notes beyond it
 | `double` | own length becomes twice the effective length (an error above 32); the notes are repeated in the second half, replacing what was stored there |
 | `halve` | own length becomes half the effective length rounded down (an error at 1) |
 | `euclid` | replaces the notes with `hits` notes spread as evenly as possible over `steps` (default the effective length; another value becomes the own length first), first note on step 1, then moved `rotate` later; velocity default 100 |
+| `transpose` | every note of the lane's pattern moves by `semitones`, or by `degrees` of the key and scale (section 8; a note outside the scale lands on the scale with its first degree). Exactly one of the two, a whole number, not 0. An error when any note would leave 0..127, and then nothing moves. Without a lane: every melodic lane. A drum lane named by itself is an error that says its pitch is its tuning (`setLane`) |
+| `toScale` | every note of the lane's pattern that is outside the key and scale moves to the nearest pitch inside (the lower one when two are as near); when it lands on a note that is already there, the louder of the two stays. Without a lane: every melodic lane. A drum lane named by itself is an error |
 | `copyVariation` | copies every stored note and the own length of every lane (or the given lanes) from one slot to another |
 | `addLane`, `removeLane`, `moveLane`, `setLaneSound` | the lanes themselves (`PulseGridFactory`). The last lane cannot be removed |
 
@@ -194,6 +202,15 @@ lists every action against its ops; a new action does not compile until it is li
 | a lane's menu | `clearLane`, `shiftLane`, `removeLane`, `setLaneSound` | `clear`, `rotate`, `removeLane`, `setLaneSound` |
 | Add lane | `addDrumLane` | `addLane` |
 | Kit menu | `loadKit`, `loadBeat` | `setLaneSound`; `setSetting`, `setPatternLength`, `setPatternText`, `clear` |
+| Key and Scale menus | `setKey`, `setScale` | `setSetting` |
+| a key of the keyboard | `setLanePitch` | `setLane` |
+| the roll, Paint: a press on an empty place, a drag to the right | `paintNote` | `setNote` |
+| the roll, Paint or Select: the right end of a note, dragged | `resizeNote` | `setNote` |
+| the roll, Paint: a click on a note; Erase: a press or a drag over notes | `eraseNote` | `removeNote` |
+| the roll, Select: picked notes dragged (with Alt: copied) | `moveNotes` | `setPattern` |
+| the roll, Select: Delete | `removeNotes` | `removeNote` |
+| the velocity, chance and accent rows | `setStepValues` | `setStep` |
+| a melodic lane's menu: Octave up, Octave down, Fit to scale | `transposeLane`, `laneToScale` | `transpose`, `toScale` |
 
 Play, stop, the tempo, undo and redo are the DAW's own and are not ops.
 
@@ -203,6 +220,9 @@ first empty variation, the steps of the pattern of a lane that plays now with it
 step that plays at a song position (a step is 240 pulses).
 
 One drag is one undo step: the screen sends every change of a drag unmarked and marks once on release.
+
+For melody `PulseGridView` also gives the piano roll of a lane (`roll`), where picked notes land when they are
+dragged (`moved`) and the pitches a lane sounds at a song position (`sounding`); section 8.
 
 ### Kits and beats
 
@@ -255,3 +275,46 @@ reading everything again. `op` (from 1) names the refused op; it is absent when 
 - Sounds by name: in `addLane` and `setLaneSound` the agent may write `"sound": {"catalog": "sample:<uuid>"}`.
   Nitro looks the id up in its sound catalogue (the One Shots folders of the openDAW sample library) and puts the
   full sound input of section 5 in its place before the request leaves Nitro. The model never sees catalogue ids.
+
+## 8. Melody: key, scale, the piano roll
+
+### What key and scale do
+
+A PulseGrid has one key (`root`) and one scale. They never move a note by themselves and the engine does not
+read them. They decide three things: which rows a piano roll shows, what `transpose` by `degrees` moves by, and
+where `toScale` puts a note. So changing the scale from major to minor changes the rows; the notes stay where
+they are until someone says `toScale` (the lane's menu: Fit to scale).
+
+### The roll (`PulseGridView.roll`)
+
+The piano roll of a lane shows the pattern that plays now. Its rows, from the highest pitch down, are the
+pitches of the key and scale from an octave under the lane pitch to an octave over it, and further wherever the
+pattern has notes. A note outside the scale has a row of its own, marked as outside, so no note is ever hidden.
+Its columns are the steps of the pattern's effective length. A note starts at its step and is as long as its
+length says (4 is one step); the part beyond the pattern's end is not drawn.
+
+### What the screen adds for melody
+
+- Every lane opens with its arrow. An open melodic lane shows its roll in place of its step row; an open drum
+  lane keeps its step row. Under both sit three rows with one place per step: velocity (a bar, dragged up and
+  down), chance (a dot, dragged up and down), accent (a star, pressed). They change every note of the step
+  (`setStep`) and are empty where a step has no note. A closed melodic lane stays one row of steps: a press puts
+  a note at the lane pitch.
+- Four tools, chosen for the whole window. They act in the rolls:
+  Paint: a press on an empty place puts a note of one step there, and dragging right before the release makes it
+  longer; the right end of a note, dragged, changes its length; a click on a note removes it.
+  Erase: a press, or a drag over notes, removes them.
+  Select: a press picks a note (Shift adds it to the pick or takes it out), a drag from an empty place picks
+  what its box touches, a press on an empty place lets go. Picked notes are dragged to other steps and rows (with
+  Alt they are copied), the right end of a picked note changes its length, Delete removes them.
+  Listen: a press sounds the row's pitch on that lane and changes nothing.
+  A step row keeps its own gesture under every tool (a press turns the step on or off, a drag paints), except
+  under Listen, where a press sounds the lane.
+- Lengths set by a drag are whole steps. Finer lengths, offsets and repeats are written as text or ops.
+- The keyboard shows the octave of the selected lane's pitch with one under and one over it. Keys of the key
+  and scale are lit, the root stands out, the lane pitch is ringed, and while the song plays the keys the
+  selected lane sounds light up (`PulseGridView.sounding`). A press on a key sounds it on the selected lane; on a
+  melodic lane it also becomes the lane pitch (`setLane`), the note a press on its closed row puts in. A drum
+  lane's pitch is its tuning and the keyboard does not change it.
+- Which lanes are open, the tool and the picked notes belong to the screen, not to the document: an agent
+  neither sees nor needs them.

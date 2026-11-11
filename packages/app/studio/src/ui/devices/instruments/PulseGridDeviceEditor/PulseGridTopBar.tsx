@@ -11,6 +11,7 @@ import {MenuButton} from "@/ui/components/MenuButton"
 import {Surface} from "@/ui/surface/Surface"
 import {PulseGridContext} from "./PulseGridContext"
 import {PulseGridDial} from "./PulseGridDial"
+import {PulseGridKeyScale} from "./PulseGridKeyScale"
 
 const className = Html.adoptStyleSheet(css, "PulseGridTopBar")
 
@@ -81,6 +82,7 @@ export const PulseGridTopBar = ({lifecycle, context}: Construct): HTMLElement =>
                            set={value => context.send(PulseGridActions.setLength(value), false)}
                            commit={context.mark} revert={context.revert}
                            subscribe={refresh => doc.subscribe(refresh)}/>
+            <PulseGridKeyScale lifecycle={lifecycle} context={context}/>
             <div className="pg-group history">
                 <Button lifecycle={lifecycle} className="pg-button" disabled={undoDisabled}
                         appearance={{tooltip: "Undo"}} onClick={() => {if (editing.canUndo()) {editing.undo()}}}>

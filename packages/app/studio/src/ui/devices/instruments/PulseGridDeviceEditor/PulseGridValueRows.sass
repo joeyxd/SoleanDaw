@@ -1,0 +1,88 @@
+component
+  &.values
+    flex: 0 0 auto
+    display: flex
+    flex-direction: column
+    gap: 4px
+    min-width: 0
+
+    > .line
+      display: grid
+      column-gap: 3px
+      align-items: stretch
+      flex: 0 0 auto
+      box-sizing: border-box
+
+    .place
+      position: relative
+      overflow: hidden
+      border-radius: 5px
+      touch-action: none
+      user-select: none
+      cursor: ns-resize
+      background: color-mix(in srgb, var(--lane) 7%, #0a0c1f)
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lane) 12%, transparent)
+
+      &.empty
+        cursor: default
+        background: color-mix(in srgb, var(--lane) 3%, #0a0c1f)
+        box-shadow: none
+
+    .bar
+      position: absolute
+      left: 0
+      right: 0
+      bottom: 0
+      border-radius: 3px 3px 0 0
+      background: var(--lane)
+      box-shadow: 0 0 8px color-mix(in srgb, var(--lane) 55%, transparent)
+      pointer-events: none
+
+    .dot
+      position: absolute
+      left: 50%
+      top: 50%
+      width: calc(5px + var(--c) * 8px)
+      height: calc(5px + var(--c) * 8px)
+      transform: translate(-50%, -50%)
+      border-radius: 50%
+      background: var(--lane)
+      opacity: calc(0.25 + var(--c) * 0.75)
+      box-shadow: 0 0 calc(var(--c) * 8px) var(--lane)
+      pointer-events: none
+
+    > .line[data-row=accent] > .place:not(.empty)
+      cursor: pointer
+
+    .star
+      position: absolute
+      inset: 0
+      display: flex
+      align-items: center
+      justify-content: center
+      font-size: 13px
+      line-height: 1
+      color: color-mix(in srgb, var(--lane) 25%, #2a2d52)
+      pointer-events: none
+
+      &.on
+        color: #fff
+        text-shadow: 0 0 6px var(--lane), 0 0 2px var(--lane)
+
+  &.labels
+    flex: 0 0 auto
+    display: flex
+    flex-direction: column
+    gap: 4px
+
+    > .label
+      box-sizing: border-box
+      display: flex
+      align-items: center
+      justify-content: flex-end
+      padding-right: 6px
+      font-size: 10.5px
+      letter-spacing: 0.04em
+      text-transform: uppercase
+      color: var(--pg-muted, #a7a3c9)
+      user-select: none

@@ -10,7 +10,7 @@ import {PulseGridDocs} from "./PulseGridDocs"
 import {PulseGridKits} from "./PulseGridKits"
 import {PulseGridOps} from "./PulseGridOps"
 import {PulseGridText} from "./PulseGridText"
-import {PulseGridDoc, PulseGridOp, PulseGridOpName} from "./PulseGridTypes"
+import {PulseGridDoc, PulseGridNote, PulseGridOp, PulseGridOpName} from "./PulseGridTypes"
 
 // A PulseGrid as the editor makes one: the instrument factory with its default kit.
 const fixture = () => {
@@ -54,6 +54,16 @@ const cases: Record<keyof typeof PulseGridActions, Case> = {
     setGroove: {ops: ["setSetting"], call: () => PulseGridActions.setGroove(40)},
     setProbability: {ops: ["setSetting"], call: () => PulseGridActions.setProbability(75)},
     setHumanize: {ops: ["setSetting"], call: () => PulseGridActions.setHumanize(22)},
+    setKey: {ops: ["setSetting"], call: () => PulseGridActions.setKey(6)},
+    setScale: {ops: ["setSetting"], call: () => PulseGridActions.setScale(1)},
+    setLanePitch: {ops: ["setLane"], call: (_, lane) => PulseGridActions.setLanePitch(lane, 62)},
+    paintNote: {ops: ["setNote"], call: (_, lane) => PulseGridActions.paintNote(lane, 1, 60)},
+    resizeNote: {ops: ["setNote"], call: (_, lane) => PulseGridActions.resizeNote(lane, 1, 60, 8)},
+    eraseNote: {ops: ["removeNote"], call: (_, lane) => PulseGridActions.eraseNote(lane, 1, 60)},
+    removeNotes: {ops: ["removeNote"], call: (_, lane) => PulseGridActions.removeNotes(lane, [{step: 1, pitch: 60}])},
+    moveNotes: {ops: ["setPattern"], call: (doc, lane) => PulseGridActions.moveNotes(doc, lane, [{step: 1, pitch: 60}], 1, 1)},
+    transposeLane: {ops: ["transpose"], call: doc => PulseGridActions.transposeLane(doc.lanes.find(lane => lane.kind === "melodic")!.id, 12)},
+    laneToScale: {ops: ["toScale"], call: doc => PulseGridActions.laneToScale(doc.lanes.find(lane => lane.kind === "melodic")!.id)},
     pickScene: {ops: ["setPlaying"], call: () => PulseGridActions.pickScene(3)},
     pickVariation: {ops: ["setPlaying"], call: () => PulseGridActions.pickVariation("C")},
     newVariation: {ops: ["copyVariation", "setPlaying"], call: doc => PulseGridActions.newVariation(doc)},
@@ -139,6 +149,92 @@ describe("PulseGridActions", () => {
         expect(PulseGridView.playingStep(240 * 17, 16)).toBe(1)
         expect(PulseGridView.playingStep(240 * 7, 6)).toBe(1)
     })
+})
+
+describe("PulseGrid melody views and gestures", () => {
+    const note = (step: number, pitch: number, values: Partial<PulseGridNote> = {}): PulseGridNote =>
+        ({step, pitch, ...PulseGridNote.Defaults, ...values})
+
+    it("shows fifteen C major pitches around an empty melodic lane and flags the roots", () => {
+        const f = fixture()
+        const roll = PulseGridView.roll(f.read(), f.lane("Synth"))
+        expect(roll).toMatchObject({length: 16, own: false, notes: []})
+        expect(roll.rows.map(row => row.pitch)).toEqual([72, 71, 69, 67, 65, 64, 62, 60, 59, 57, 55, 53, 52, 50, 48])
+        expect(roll.rows.filter(row => row.root).map(row => row.pitch)).toEqual([72, 60, 48])
+        expect(roll.rows.every(row => row.inScale)).toBe(true)
+        expect(roll.rows.find(row => row.pitch === 60)?.name).toBe("C3")
+    })
+
+    it("adds an out-of-scale row and widens the roll for far notes", () => {
+        const f = fixture()
+        f.ok([{op: "setPattern", lane: "Synth", notes: [note(1, 61), note(2, 24), note(3, 96)]}])
+        const roll = PulseGridView.roll(f.read(), f.lane("Synth"))
+        expect(roll.rows.find(row => row.pitch === 61)).toMatchObject({inScale: false, root: false})
+        expect(roll.rows[0].pitch).toBeGreaterThanOrEqual(96)
+        expect(roll.rows.at(-1)!.pitch).toBeLessThanOrEqual(24)
+        expect(roll.notes.map(note => note.pitch)).toEqual([61, 24, 96])
+    })
+
+    it("excludes hidden notes from the roll and its pitch range", () => {
+        const f = fixture()
+        f.ok([{op: "setPattern", lane: "Synth", notes: [note(1, 60), note(12, 127)]},
+            {op: "setPatternLength", lane: "Synth", length: 8}])
+        const roll = PulseGridView.roll(f.read(), f.lane("Synth"))
+        expect(roll).toMatchObject({length: 8, own: true, notes: [note(1, 60)]})
+        expect(roll.rows[0].pitch).toBe(72)
+    })
+
+    it.each([[-100, -2], [100, 3]])("stops a drag of %s at the pattern edge", (steps, expected) => {
+        const f = fixture()
+        f.ok([{op: "setPatternLength", lane: "Synth", length: 8}])
+        const picked = [{step: 5, pitch: 64}, {step: 3, pitch: 60}]
+        const moved = PulseGridView.moved(f.read(), f.lane("Synth"), picked, steps, 1)
+        expect(moved).toEqual({steps: expected, degrees: 1,
+            keys: [{step: 5 + expected, pitch: 65}, {step: 3 + expected, pitch: 62}]})
+    })
+
+    it.each([[0, -10], [127, 10]])("stops degree dragging at MIDI pitch %s", (pitch, degrees) => {
+        const f = fixture()
+        expect(PulseGridView.moved(f.read(), f.lane("Synth"), [{step: 1, pitch}], 0, degrees))
+            .toEqual({steps: 0, degrees: 0, keys: [{step: 1, pitch}]})
+    })
+
+    it("shortens a degree drag for the whole selection at the MIDI boundary", () => {
+        const f = fixture()
+        expect(PulseGridView.moved(f.read(), f.lane("Synth"), [{step: 2, pitch: 125}, {step: 1, pitch: 60}], 0, 5))
+            .toEqual({steps: 0, degrees: 1, keys: [{step: 2, pitch: 127}, {step: 1, pitch: 62}]})
+    })
+
+    it("sounds the drum lane pitch instead of the stored pitch", () => {
+        const f = fixture()
+        f.ok([{op: "setNote", lane: "Kick", note: note(1, 60)}, {op: "setLane", lane: "Kick", pitch: 36}])
+        expect(PulseGridView.sounding(f.read(), f.lane("Kick"), 0)).toEqual([36])
+    })
+
+    it("sounds a length-eight note for two steps and wraps at the own pattern length", () => {
+        const f = fixture()
+        f.ok([{op: "setNote", lane: "Synth", note: note(1, 64, {length: 8})},
+            {op: "setPatternLength", lane: "Synth", length: 4}])
+        for (const position of [0, 240, 479, 960, 1200]) {
+            expect(PulseGridView.sounding(f.read(), f.lane("Synth"), position)).toEqual([64])
+        }
+        expect(PulseGridView.sounding(f.read(), f.lane("Synth"), 480)).toEqual([])
+    })
+
+    it.each([[1, 1, false], [2, 0, true], [0, 0, false]] as const)(
+        "applies a move (%s, %s), copy %s, preserving every note value", (steps, degrees, copy) => {
+            const f = fixture()
+            const original = note(1, 60, {velocity: 70, length: 8, chance: 30, offset: -12, repeats: 2, accent: true})
+            const obstacle = note(2, 62)
+            const other = note(5, 67, {velocity: 45, length: 3, chance: 90, offset: 3, repeats: 1, accent: true})
+            f.ok([{op: "setPattern", lane: "Synth", notes: [original, obstacle, other]}])
+            const before = f.lane("Synth").patterns[0]
+            f.ok(PulseGridActions.moveNotes(f.read(), f.lane("Synth").id, [{step: 1, pitch: 60}], steps, degrees, copy))
+            const pattern = f.lane("Synth").patterns[0]
+            if (steps === 0 && degrees === 0) {expect(pattern).toEqual(before)}
+            else if (copy) {expect(pattern.notes).toEqual([original, obstacle, {...original, step: 3}, other])}
+            else {expect(pattern.notes).toEqual([{...original, step: 2, pitch: 62}, other])}
+        })
 })
 
 describe("PulseGridKits", () => {

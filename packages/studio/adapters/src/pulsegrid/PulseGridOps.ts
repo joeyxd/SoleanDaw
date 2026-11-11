@@ -6,6 +6,7 @@ import {PulseGridFactory} from "./PulseGridFactory"
 import {PulseGridDocs} from "./PulseGridDocs"
 import {PulseGridMoves} from "./PulseGridMoves"
 import {PulseGridNotes} from "./PulseGridNotes"
+import {PulseGridScales} from "./PulseGridScales"
 import {PulseGridText} from "./PulseGridText"
 import {
     PulseGridDoc, PulseGridError, PulseGridLaneRef, PulseGridNote, PulseGridNoteInput, PulseGridOp, PulseGridOpName,
@@ -130,10 +131,21 @@ const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes): Answ
             if (key === "name") {
                 const name = string(key, value)
                 writes.push(() => head.label.setValue(name))
-            } else if (key === "length" || key === "root" || key === "scale") {
-                const limits = {length: [1, 64], root: [0, 11], scale: [0, 2147483647]}
-                const [min, max] = limits[key]
-                const checked = integer(key, value, min, max)
+            } else if (key === "scale") {
+                const scale = typeof value === "number" || typeof value === "string" ? PulseGridScales.find(value) : undefined
+                if (scale === undefined) {
+                    fail(`scale ${String(value)} is not allowed: expected ${PulseGridScales.All.map(scale => scale.id).join(", ")}`)
+                }
+                const checked = scale!.index
+                writes.push(() => head.scale.setValue(checked))
+            } else if (key === "length" || key === "root") {
+                const named = key === "root" && typeof value === "string"
+                    ? Array.from({length: 12}, (_, root) => PulseGridScales.keyName(root)).indexOf(value.toUpperCase())
+                    : value
+                if (key === "root" && typeof value === "string" && named === -1) {
+                    fail(`root ${value} is not allowed: expected 0..11 or C, C#, D, D#, E, F, F#, G, G#, A, A#, B`)
+                }
+                const checked = integer(key, named, key === "length" ? 1 : 0, key === "length" ? 64 : 11)
                 writes.push(() => head[key].setValue(checked))
             } else if (key === "swing" || key === "groove" || key === "probability" || key === "humanize" ||
                 key === "accentAmount") {
@@ -294,6 +306,36 @@ const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes): Answ
                     notes = [...rhythm, ...notes.filter(n => n.step > steps)]
                 }
                 stagePattern(writes, lane, slot, ownLength, notes)
+            }
+            return patternAnswer(device, lanes, slot, op.lane === undefined)
+        }
+        case "transpose":
+        case "toScale": {
+            const slot = slotOf(device, op)
+            const lanes = op.lane === undefined ? device.lanes.filter(lane => lane.device.kind.getValue() === 1)
+                : [laneOf(device, op.lane)]
+            let by = 0
+            let unit: "semitones" | "degrees" = "semitones"
+            if (op.op === "transpose") {
+                if ((op.semitones === undefined) === (op.degrees === undefined)) {
+                    fail(`transpose semitones ${String(op.semitones)} degrees ${String(op.degrees)} is not allowed: ` +
+                        "expected exactly one of semitones or degrees, a nonzero integer")
+                }
+                unit = op.semitones === undefined ? "degrees" : "semitones"
+                by = integer(unit, op[unit])
+                if (by === 0) {fail(`${unit} ${by} is not allowed: expected a nonzero integer`)}
+            }
+            for (const lane of lanes) {
+                if (lane.device.kind.getValue() === 0) {
+                    fail(`${op.op} lane ${String(op.lane)} is not allowed: expected a melodic lane; ` +
+                        "a drum lane's pitch is its tuning (setLane)")
+                }
+                const {ownLength, length, notes} = patternOf(device, lane, slot)
+                const active = notes.filter(note => note.step <= length)
+                const root = head.root.getValue(), scale = head.scale.getValue()
+                const moved = op.op === "transpose" ? PulseGridMoves.transpose(active, by, unit, root, scale)
+                    : PulseGridMoves.toScale(active, root, scale)
+                stagePattern(writes, lane, slot, ownLength, [...moved, ...notes.filter(note => note.step > length)])
             }
             return patternAnswer(device, lanes, slot, op.lane === undefined)
         }

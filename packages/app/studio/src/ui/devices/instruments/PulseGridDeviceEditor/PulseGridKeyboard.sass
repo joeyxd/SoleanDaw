@@ -1,0 +1,83 @@
+component
+  --ring: #2bfdff
+  flex: 1 1 420px
+  min-width: 0
+  gap: 12px
+  padding: 6px 10px
+  box-sizing: border-box
+
+  > .keys
+    position: relative
+    flex: 1 1 auto
+    min-width: 240px
+    max-width: 760px
+    height: 56px
+    user-select: none
+    touch-action: none
+
+    > .key
+      position: absolute
+      top: 0
+      box-sizing: border-box
+      cursor: pointer
+
+      &.white
+        height: 100%
+        border-radius: 0 0 4px 4px
+        background: #1a1d3f
+        box-shadow: inset 0 0 0 1px #05051788
+
+        &.scale
+          background: #3a3f86
+
+        &.root
+          background: #7a5ad0
+
+        &:hover
+          filter: brightness(1.25)
+
+      &.black
+        z-index: 1
+        height: 62%
+        border-radius: 0 0 3px 3px
+        background: #07081c
+        box-shadow: inset 0 0 0 1px #262a52
+
+        &.scale
+          background: #2c2f66
+
+        &.root
+          background: #5a3fa8
+
+        &:hover
+          filter: brightness(1.5)
+
+      &.ringed
+        z-index: 2
+        box-shadow: inset 0 0 0 2px var(--ring), 0 0 8px var(--ring)
+
+      &.sounding
+        background: #fff
+        box-shadow: 0 0 10px #fff
+
+        &.black
+          background: #dcd0ff
+
+  > .info
+    flex: 0 0 auto
+    display: flex
+    flex-direction: column
+    min-width: 64px
+    line-height: 1.2
+
+    > .lane
+      color: var(--pg-muted)
+      max-width: 120px
+      overflow: hidden
+      text-overflow: ellipsis
+      white-space: nowrap
+
+    > .pitch
+      font-size: 15px
+      font-weight: 700
+      color: var(--ring)

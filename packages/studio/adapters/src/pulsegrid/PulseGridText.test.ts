@@ -110,6 +110,27 @@ const makeLane = (index: number, name: string, kind: "drum" | "melodic", pitch: 
 })
 
 describe("PulseGridText whole document", () => {
+    it.each(["natural-minor", "minor", "1", "MINOR"])("reads scale %s as the same stored setting", scale => {
+        expect(PulseGridText.parseText(`scale ${scale}`)).toEqual({
+            ops: [{op: "setSetting", key: "scale", value: 1}], errors: []
+        })
+    })
+
+    it("refuses an unknown scale and keeps the settings line atomic", () => {
+        const parsed = PulseGridText.parseText("swing 55 scale unknown")
+        expect(parsed.ops).toEqual([])
+        expect(parsed.errors[0]).toMatch(/line 1: scale unknown.*major, natural-minor/)
+    })
+
+    it("writes natural minor by id", () => {
+        const doc: PulseGridDoc = {
+            version: 1, id: "head", name: "Minor",
+            settings: {length: 16, swing: 50, groove: 0, probability: 100, humanize: 0, accentAmount: 50, root: 0, scale: 1},
+            scene: 1, variation: "A", scenes: [], lanes: []
+        }
+        expect(PulseGridText.toText(doc).split("\n")[1]).toContain("key C  scale natural-minor")
+    })
+
     it("formats and parses names, settings, scenes, playing, and pattern slots", () => {
         const variation: PulseGridVariation = "A"
         const doc: PulseGridDoc = {
@@ -126,7 +147,7 @@ describe("PulseGridText whole document", () => {
         const text = PulseGridText.toText(doc)
         expect(text.replace(/ +/g, " ")).toBe([
             "PulseGrid \"Night drive\"",
-            "length 16 swing 54 groove 20 probability 100 humanize 0 accent 50 key C scale 0",
+            "length 16 swing 54 groove 20 probability 100 humanize 0 accent 50 key C scale major",
             "playing scene 1 A", "scenes 1 \"Intro\" 2 \"Drop\"", "lanes",
             "  1 kick drum C1 Nano \"kick\" gain 0 pan 0",
             "  2 hat drum F#1 Nano \"hat\" gain 0 pan 0",

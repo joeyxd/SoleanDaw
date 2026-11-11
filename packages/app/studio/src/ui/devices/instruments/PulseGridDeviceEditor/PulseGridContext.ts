@@ -2,7 +2,8 @@ import {DefaultObservableValue, Lifecycle, MutableObservableValue, ObservableVal
 import {deferNextFrame} from "@opendaw/lib-dom"
 import {InstrumentCompositeBox} from "@opendaw/studio-boxes"
 import {
-    PulseGridDevice, PulseGridDoc, PulseGridDocs, PulseGridError, PulseGridOp, PulseGridOpResult, PulseGridOps
+    PulseGridDevice, PulseGridDoc, PulseGridDocs, PulseGridError, PulseGridNoteKey, PulseGridOp, PulseGridOpResult,
+    PulseGridOps
 } from "@opendaw/studio-adapters"
 import {StudioService} from "@/service/StudioService"
 
@@ -17,6 +18,12 @@ import {StudioService} from "@/service/StudioService"
 
 export type PulseGridNotice = {kind: "error" | "info", text: string}
 
+// What a press or a drag in a piano roll does (SPEC.md, section 8).
+export type PulseGridTool = "paint" | "erase" | "select" | "listen"
+
+// The notes picked with the Select tool: always of one lane, in the pattern that plays.
+export type PulseGridPicked = {lane: string, notes: ReadonlyArray<PulseGridNoteKey>}
+
 export type PulseGridContext = {
     readonly service: StudioService
     readonly composite: InstrumentCompositeBox
@@ -28,6 +35,11 @@ export type PulseGridContext = {
     // the lanes (ids) that just changed under an agent's hands; rows with these ids flash. The lifecycle owns it
     // and empties it after the flash has played. Components only read it.
     readonly flash: MutableObservableValue<ReadonlyArray<string>>
+    // What belongs to the screen and not to the document, so an agent never sees it: the tool in hand, the lanes
+    // (ids) that are open, and the picked notes. They outlive the rows, which are built again after every change.
+    readonly tool: MutableObservableValue<PulseGridTool>
+    readonly openLanes: MutableObservableValue<ReadonlySet<string>>
+    readonly picked: MutableObservableValue<Optional<PulseGridPicked>>
     // Applies the ops as one undo step and answers what each one did. A refused op is shown as a notice; the
     // ops before it stay. With `mark` false the change joins the gesture in progress: call `mark()` when the
     // gesture ends (pointer up), so one drag is one undo step. When the gesture is cancelled instead (Escape),
@@ -67,6 +79,9 @@ export namespace PulseGridContext {
         const selectedLane = lifecycle.own(new DefaultObservableValue<Optional<string>>(undefined))
         const notice = lifecycle.own(new DefaultObservableValue<Optional<PulseGridNotice>>(undefined))
         const flash = lifecycle.own(new DefaultObservableValue<ReadonlyArray<string>>([]))
+        const tool = lifecycle.own(new DefaultObservableValue<PulseGridTool>("paint"))
+        const openLanes = lifecycle.own(new DefaultObservableValue<ReadonlySet<string>>(new Set()))
+        const picked = lifecycle.own(new DefaultObservableValue<Optional<PulseGridPicked>>(undefined))
         const state = {text: JSON.stringify(first)}
         let flashTimer: ReturnType<typeof setTimeout> | undefined
         lifecycle.ownAll(
@@ -89,7 +104,7 @@ export namespace PulseGridContext {
         const deferred = lifecycle.own(deferNextFrame(refresh))
         lifecycle.own(boxGraph.subscribeToAllUpdates({onUpdate: () => deferred.request()}))
         const context: PulseGridContext = {
-            service, composite, doc, selectedLane, notice, flash,
+            service, composite, doc, selectedLane, notice, flash, tool, openLanes, picked,
             send: (ops, mark = true) => {
                 if (ops.length === 0) {return []}
                 const results = editing.modify(() => PulseGridOps.apply(composite, ops), mark).unwrapOrElse(() => [])

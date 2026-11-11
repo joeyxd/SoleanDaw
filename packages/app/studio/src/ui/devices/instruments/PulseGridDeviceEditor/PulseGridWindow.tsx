@@ -6,6 +6,7 @@ import {PulseGridContext} from "./PulseGridContext"
 import {PulseGridTopBar} from "./PulseGridTopBar"
 import {PulseGridSceneBar} from "./PulseGridSceneBar"
 import {PulseGridLanes} from "./PulseGridLanes"
+import {PulseGridBottomBar} from "./PulseGridBottomBar"
 
 const className = Html.adoptStyleSheet(css, "PulseGridWindow")
 
@@ -31,6 +32,7 @@ export const PulseGridWindow = ({lifecycle, context}: Construct): HTMLElement =>
             <PulseGridTopBar lifecycle={lifecycle} context={context}/>
             <PulseGridSceneBar lifecycle={lifecycle} context={context}/>
             <div className="main"><PulseGridLanes lifecycle={lifecycle} context={context}/></div>
+            <PulseGridBottomBar lifecycle={lifecycle} context={context}/>
             {toast}
         </div>
     )

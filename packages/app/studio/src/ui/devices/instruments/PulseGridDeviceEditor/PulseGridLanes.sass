@@ -123,6 +123,45 @@ component
       > .cells
         opacity: 0.32
 
+  // An open lane: the head with the names of its extra rows under it, and beside them the step row, the piano
+  // roll of a melodic lane and the velocity, chance and accent rows. Both columns stack with the same gap, so a
+  // name is as high as its row.
+  .row.open
+    height: auto
+    align-items: flex-start
+
+    > .side
+      position: sticky
+      left: 0
+      z-index: 2
+      flex: 0 0 196px
+      width: 196px
+      display: flex
+      flex-direction: column
+      gap: 4px
+
+      > .head
+        position: static
+        flex: 0 0 34px
+        width: auto
+
+    > .body
+      flex: 1 1 auto
+      min-width: 0
+      display: flex
+      flex-direction: column
+      gap: 4px
+
+      > .cells
+        flex: 0 0 34px
+
+    &.quiet
+      > .side > .head > .led
+        opacity: 0.35
+
+      > .body
+        opacity: 0.32
+
   .head
     position: sticky
     left: 0
@@ -149,6 +188,26 @@ component
 
     &:hover
       opacity: 1
+
+  .fold
+    flex: 0 0 14px
+    width: 14px
+    height: 22px
+    padding: 0
+    border: none
+    background: none
+    color: var(--pg-muted, #a7a3c9)
+    font-size: 11px
+    line-height: 1
+    cursor: pointer
+    transition: transform 80ms
+
+    &:hover
+      color: var(--pg-fg, #efeaff)
+
+    &.open
+      transform: rotate(90deg)
+      color: var(--lane)
 
   .led
     flex: 0 0 9px

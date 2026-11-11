@@ -11,6 +11,7 @@ import {PulseGridFactory} from "./PulseGridFactory"
 import {PulseGridNotes} from "./PulseGridNotes"
 import {PulseGridOps} from "./PulseGridOps"
 import {PulseGridText} from "./PulseGridText"
+import {PulseGridScales} from "./PulseGridScales"
 import {PulseGridError, PulseGridNote, PulseGridOp} from "./PulseGridTypes"
 
 const note = (step: number, pitch = 60): PulseGridNote => ({step, pitch, ...PulseGridNote.Defaults})
@@ -51,9 +52,145 @@ const fixture = () => {
     return {graph, composite, head, cells, lanes, read, apply, pattern, seed}
 }
 const success = (op: PulseGridOp["op"], ...lines: Array<string>) => ({ok: true, op, lines})
-const settings = "length 16  swing 50  groove 0  probability 100  humanize 0  accent 50  key C  scale 0"
+const settings = "length 16  swing 50  groove 0  probability 100  humanize 0  accent 50  key C  scale major"
 
 describe("PulseGridOps", () => {
+    it.each(["natural-minor", "Minor", "Natural Minor", "1", 1])("stores scale %s by its index", value => {
+        const f = fixture()
+        expect(f.apply({op: "setSetting", key: "scale", value})[0].ok).toBe(true)
+        expect(f.read().settings.scale).toBe(1)
+    })
+
+    it.each(["F#", "f#", 6])("stores key %s by its pitch class", value => {
+        const f = fixture()
+        expect(f.apply({op: "setSetting", key: "root", value})[0].ok).toBe(true)
+        expect(f.read().settings.root).toBe(6)
+    })
+
+    it.each([12, "H", "Bb", -1, 1.5])("refuses root %s without writes", value => {
+        const f = fixture(), before = f.read()
+        const result = f.apply({op: "setSetting", key: "root", value})[0]
+        expect(result.ok).toBe(false)
+        if (!result.ok) {expect(result.error).toContain(String(value))}
+        expect(f.read()).toEqual(before)
+    })
+
+    it.each(["unknown", 15, -1, 1.5, NaN])("lists the scale ids when refusing %s", value => {
+        const f = fixture(), before = f.read()
+        const result = f.apply({op: "setSetting", key: "scale", value})[0]
+        expect(result.ok).toBe(false)
+        if (!result.ok) {
+            expect(result.error).toContain(String(value))
+            for (const scale of PulseGridScales.All) {expect(result.error).toContain(scale.id)}
+        }
+        expect(f.read()).toEqual(before)
+    })
+
+    it("transposes one melodic lane by semitones and answers its new line", () => {
+        const f = fixture()
+        f.seed(0, [1])
+        f.apply({op: "setPattern", lane: 3, notes: [note(1), {...note(5, 64), length: 8, chance: 40, accent: true}]})
+        expect(f.apply({op: "transpose", lane: "marimba", semitones: 2})).toEqual([
+            success("transpose", "marimba: 1:D3 5:F#3%40l8!")])
+        expect(f.pattern(2)?.notes).toEqual([note(1, 62), {...note(5, 66), length: 8, chance: 40, accent: true}])
+        expect(f.pattern()?.notes).toEqual([note(1)])
+    })
+
+    it.each([
+        [0, 0, [60, 64, 61], [62, 65, 62]],
+        [2, 1, [62, 64, 65], [64, 65, 67]],
+        [0, 0, [60, 61], [59, 60]]
+    ])("transposes by degrees in root %s scale %s", (root, scale, pitches, expected) => {
+        const f = fixture()
+        f.apply({op: "setSetting", key: "root", value: root}, {op: "setSetting", key: "scale", value: scale},
+            {op: "setPattern", lane: 3, notes: pitches.map((pitch, i) => note(i + 1, pitch))})
+        expect(f.apply({op: "transpose", lane: 3, degrees: expected[0] < pitches[0] ? -1 : 1})[0].ok).toBe(true)
+        expect(f.pattern(2)?.notes.map(note => note.pitch)).toEqual(expected)
+    })
+
+    it.each([
+        {semitones: 1, degrees: 1}, {}, {semitones: 0}, {degrees: 0}, {semitones: 1.5}, {degrees: -0.5}
+    ])("refuses invalid transpose %j without writes", amount => {
+        const f = fixture()
+        f.seed(2, [1])
+        const before = f.read()
+        const result = f.apply({op: "transpose", lane: 3, ...amount})[0]
+        expect(result.ok).toBe(false)
+        if (!result.ok) {expect(result.error).toMatch(/integer/)}
+        expect(f.read()).toEqual(before)
+    })
+
+    it.each([{semitones: 1}, {degrees: 1}, {semitones: -128}, {degrees: -100}])(
+        "refuses an out-of-range transpose %j atomically across lanes", amount => {
+            const f = fixture()
+            f.apply({op: "setLane", lane: 2, kind: "melodic"}, {op: "setNote", lane: 2, note: note(1)},
+                {op: "setNote", lane: 3, note: note(1, 127)})
+            const before = f.read()
+            const result = f.apply({op: "transpose", ...amount})[0]
+            expect(result.ok).toBe(false)
+            if (!result.ok) {expect(result.error).toContain("0..127")}
+            expect(f.read()).toEqual(before)
+        })
+
+    it.each(["transpose", "toScale"] as const)("%s rejects a named drum and explains tuning", op => {
+        const f = fixture(), before = f.read()
+        const result = f.apply(op === "transpose" ? {op, lane: "kick", semitones: 12} : {op, lane: "kick"})[0]
+        expect(result.ok).toBe(false)
+        if (!result.ok) {expect(result.error).toMatch(/kick.*melodic.*setLane/)}
+        expect(f.read()).toEqual(before)
+    })
+
+    it.each(["transpose", "toScale"] as const)("%s without a lane changes every melody and preserves drums and hidden notes", op => {
+        const f = fixture()
+        f.apply({op: "setLane", lane: 2, kind: "melodic"})
+        for (const lane of [1, 2, 3]) {
+            f.apply({op: "setPattern", lane, notes: [note(1, 61), note(12, 127)]},
+                {op: "setPatternLength", lane, length: 8})
+        }
+        const drum = f.pattern()
+        const result = f.apply(op === "transpose" ? {op, semitones: 1} : {op})[0]
+        expect(result.ok).toBe(true)
+        if (result.ok) {expect(result.lines).toEqual([
+            `hat/8: 1:${op === "transpose" ? "D3" : "C3"}`,
+            `marimba/8: 1:${op === "transpose" ? "D3" : "C3"}`])}
+        expect(f.pattern()).toEqual(drum)
+        for (const lane of [1, 2]) {
+            expect(f.pattern(lane)?.notes).toEqual([note(1, op === "transpose" ? 62 : 60), note(12, 127)])
+        }
+    })
+
+    it.each(["transpose", "toScale"] as const)("%s resolves a scene and variation and prefixes its answer", op => {
+        const f = fixture()
+        f.seed(2, [1])
+        f.apply({op: "setNote", lane: 3, scene: 2, variation: "C", note: note(2, 61)})
+        expect(f.apply(op === "transpose" ? {op, lane: 3, scene: 2, variation: "C", semitones: 1}
+            : {op, lane: 3, scene: 2, variation: "C"})).toEqual([
+            success(op, `scene 2 C marimba: 2:${op === "transpose" ? "D3" : "C3"}`)])
+        expect(f.pattern(2)?.notes).toEqual([note(1)])
+    })
+
+    it.each([70, 120])("fits C#3 down to C3 and keeps the louder collision (%s)", velocity => {
+        const f = fixture()
+        const shifted = {...note(1, 61), velocity, length: 8, offset: -5}
+        f.apply({op: "setPattern", lane: 3, notes: [note(1), shifted, note(2, 64)]})
+        expect(f.apply({op: "toScale", lane: 3})[0].ok).toBe(true)
+        expect(f.pattern(2)?.notes).toEqual([velocity > 100 ? {...shifted, pitch: 60} : note(1), note(2, 64)])
+    })
+
+    it("round trips a whole PulseGrid with named settings through text and real operations", () => {
+        const f = fixture()
+        f.apply({op: "setSetting", key: "root", value: "F#"}, {op: "setSetting", key: "scale", value: "Minor"},
+            {op: "nameScene", scene: 2, name: "Melody"}, {op: "setPlaying", scene: 2, variation: "B"},
+            {op: "setPattern", lane: 3, length: 8, notes: [note(1, 61), {...note(5, 66), velocity: 90, length: 8}]})
+        const before = f.read(), text = PulseGridText.toText(before)
+        const parsed = PulseGridText.parseText(text)
+        expect(parsed.errors).toEqual([])
+        f.apply({op: "clear"}, {op: "setSetting", key: "root", value: 0}, {op: "setSetting", key: "scale", value: 0})
+        expect(f.apply(...parsed.ops).every(result => result.ok)).toBe(true)
+        expect(f.read()).toEqual(before)
+        expect(PulseGridText.toText(f.read())).toBe(text)
+    })
+
     it("writes head settings, playing and scene names and answers their new text", () => {
         const f = fixture()
         expect(f.apply({op: "setSetting", key: "name", value: "Night drive"})).toEqual([success("setSetting", settings)])
@@ -65,7 +202,7 @@ describe("PulseGridOps", () => {
         expect(f.read().settings).toEqual(values)
         expect(f.head.groove.getValue()).toBeCloseTo(0.4)
         expect(f.apply({op: "setSetting", key: "scale", value: 2})).toEqual([success("setSetting",
-            "length 32  swing 54  groove 40  probability 80  humanize 10  accent 60  key G  scale 2")])
+            "length 32  swing 54  groove 40  probability 80  humanize 10  accent 60  key G  scale harmonic-minor")])
         expect(f.apply({op: "setPlaying", scene: 2, variation: "B"})).toEqual([success("setPlaying", "playing scene 2 B")])
         expect(f.read()).toMatchObject({scene: 2, variation: "B"})
         expect(f.apply({op: "nameScene", scene: 2, name: "Drop"})).toEqual([success("nameScene", 'scenes 2 "Drop"')])

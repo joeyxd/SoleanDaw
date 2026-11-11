@@ -86,6 +86,9 @@ export const PulseGridLanes = ({lifecycle, context}: Construct): HTMLElement => 
             rows.set(lane.id, view.element)
             state.rows.set(lane.id, view.element)
             state.tracks.push({cells: view.cells, length: view.length, mark: "playing", lit: -1})
+            if (view.rollCells.length > 0) {
+                state.tracks.push({cells: view.rollCells, length: view.length, mark: "playing", lit: -1})
+            }
             return view.element
         })
         return (
@@ -137,6 +140,7 @@ export const PulseGridLanes = ({lifecycle, context}: Construct): HTMLElement => 
 
     lifecycle.ownAll(
         context.doc.catchupAndSubscribe(owner => render(owner.getValue())),
+        context.openLanes.subscribe(() => render(context.doc.getValue())),
         context.selectedLane.subscribe(markSelected),
         engine.position.subscribe(playhead.request),
         engine.isPlaying.subscribe(playhead.request))

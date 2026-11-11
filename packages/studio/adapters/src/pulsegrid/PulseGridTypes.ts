@@ -35,6 +35,9 @@ export namespace PulseGridNote {
     export const MaxSteps = 64
 }
 
+// Which note of a pattern: no two notes of a melodic lane share step and pitch.
+export type PulseGridNoteKey = Pick<PulseGridNote, "step" | "pitch">
+
 // A note as an op gives it: step and pitch say which note, the rest is optional.
 export type PulseGridNoteInput = Pick<PulseGridNote, "step"> & Partial<Omit<PulseGridNote, "step">>
 
@@ -109,7 +112,7 @@ export type PulseGridSoundInput =
     | {instrument: "Tubular", voice?: {name: string, patch: ReadonlyArray<int>}, label?: string}
 
 export type PulseGridOp =
-    // the head
+    // the head; `scale` takes its number or its id ("natural-minor"), `root` its number or a key name ("F#")
     | {op: "setSetting", key: keyof PulseGridSettings | "name", value: number | string}
     | {op: "setPlaying", scene?: int, variation?: PulseGridVariation}
     | {op: "nameScene", scene: int, name: string}
@@ -133,6 +136,11 @@ export type PulseGridOp =
     | ({op: "double", lane?: PulseGridLaneRef} & PulseGridSlot)
     | ({op: "halve", lane?: PulseGridLaneRef} & PulseGridSlot)
     | ({op: "euclid", lane: PulseGridLaneRef, hits: int, steps?: int, rotate?: int, velocity?: int} & PulseGridSlot)
+    // melody moves; without a lane they act on every melodic lane. Exactly one of semitones or degrees
+    // (steps of the sequencer's key and scale).
+    | ({op: "transpose", lane?: PulseGridLaneRef, semitones?: int, degrees?: int} & PulseGridSlot)
+    // every note outside the sequencer's key and scale moves to the nearest pitch inside it
+    | ({op: "toScale", lane?: PulseGridLaneRef} & PulseGridSlot)
     | {
     op: "copyVariation", from: {scene?: int, variation: PulseGridVariation},
     to: {scene?: int, variation: PulseGridVariation}, lanes?: ReadonlyArray<PulseGridLaneRef>
