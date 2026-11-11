@@ -1,0 +1,12 @@
+// The highlight of a lane an agent just changed. Added to the row beside the lanes' own stylesheet.
+component.flash
+  animation: pulsegrid-flash 1.2s ease-out 1
+
+@keyframes pulsegrid-flash
+  0%
+    background: color-mix(in srgb, var(--lane, #a22ada) 38%, transparent)
+    box-shadow: 0 0 0 2px var(--lane, #a22ada), 0 0 18px var(--lane, #a22ada)
+
+  100%
+    background: transparent
+    box-shadow: 0 0 0 2px transparent, 0 0 0 transparent

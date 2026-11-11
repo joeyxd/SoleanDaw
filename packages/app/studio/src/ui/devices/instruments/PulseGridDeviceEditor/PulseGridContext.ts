@@ -1,4 +1,4 @@
-import {DefaultObservableValue, Lifecycle, MutableObservableValue, ObservableValue, Optional} from "@opendaw/lib-std"
+import {DefaultObservableValue, Lifecycle, MutableObservableValue, ObservableValue, Optional, UUID} from "@opendaw/lib-std"
 import {deferNextFrame} from "@opendaw/lib-dom"
 import {InstrumentCompositeBox} from "@opendaw/studio-boxes"
 import {
@@ -25,6 +25,9 @@ export type PulseGridContext = {
     readonly selectedLane: MutableObservableValue<Optional<string>>
     // what the window says in its toast: a refused op now, "Max: busier hats in B" once agents write here
     readonly notice: MutableObservableValue<Optional<PulseGridNotice>>
+    // the lanes (ids) that just changed under an agent's hands; rows with these ids flash. The lifecycle owns it
+    // and empties it after the flash has played. Components only read it.
+    readonly flash: MutableObservableValue<ReadonlyArray<string>>
     // Applies the ops as one undo step and answers what each one did. A refused op is shown as a notice; the
     // ops before it stay. With `mark` false the change joins the gesture in progress: call `mark()` when the
     // gesture ends (pointer up), so one drag is one undo step. When the gesture is cancelled instead (Escape),
@@ -35,6 +38,14 @@ export type PulseGridContext = {
 }
 
 export namespace PulseGridContext {
+    // the screens that are open now, by their composite, so an agent's change can reach the one that shows it
+    const open = new Map<string, PulseGridContext>()
+
+    export const opened = (composite: InstrumentCompositeBox): Optional<PulseGridContext> =>
+        open.get(UUID.toString(composite.address.uuid))
+
+    export const FlashMillis = 1300
+
     export const create = (lifecycle: Lifecycle, service: StudioService, composite: InstrumentCompositeBox): PulseGridContext => {
         const {project: {editing, boxGraph}} = service
         const read = (): Optional<PulseGridDoc> => {
@@ -55,7 +66,16 @@ export namespace PulseGridContext {
         const doc = lifecycle.own(new DefaultObservableValue<PulseGridDoc>(first))
         const selectedLane = lifecycle.own(new DefaultObservableValue<Optional<string>>(undefined))
         const notice = lifecycle.own(new DefaultObservableValue<Optional<PulseGridNotice>>(undefined))
+        const flash = lifecycle.own(new DefaultObservableValue<ReadonlyArray<string>>([]))
         const state = {text: JSON.stringify(first)}
+        let flashTimer: ReturnType<typeof setTimeout> | undefined
+        lifecycle.ownAll(
+            {terminate: () => clearTimeout(flashTimer)},
+            flash.subscribe(owner => {
+                clearTimeout(flashTimer)
+                if (owner.getValue().length === 0) {return}
+                flashTimer = setTimeout(() => flash.setValue([]), FlashMillis)
+            }))
         // The document is small, so reading all of it and comparing its text is cheaper than tracking which
         // of the boxes behind it changed, and it cannot miss one.
         const refresh = (): void => {
@@ -68,8 +88,8 @@ export namespace PulseGridContext {
         }
         const deferred = lifecycle.own(deferNextFrame(refresh))
         lifecycle.own(boxGraph.subscribeToAllUpdates({onUpdate: () => deferred.request()}))
-        return {
-            service, composite, doc, selectedLane, notice,
+        const context: PulseGridContext = {
+            service, composite, doc, selectedLane, notice, flash,
             send: (ops, mark = true) => {
                 if (ops.length === 0) {return []}
                 const results = editing.modify(() => PulseGridOps.apply(composite, ops), mark).unwrapOrElse(() => [])
@@ -84,5 +104,9 @@ export namespace PulseGridContext {
                 refresh()
             }
         }
+        const key = UUID.toString(composite.address.uuid)
+        open.set(key, context)
+        lifecycle.own({terminate: () => {if (open.get(key) === context) {open.delete(key)}}})
+        return context
     }
 }

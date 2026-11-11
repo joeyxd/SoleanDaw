@@ -5,8 +5,11 @@ import {ContextMenu} from "@opendaw/studio-core"
 import {PulseGridActions, PulseGridDoc, PulseGridLaneDoc, PulseGridView} from "@opendaw/studio-adapters"
 import {Surface} from "@/ui/surface/Surface.tsx"
 import {PulseGridContext} from "./PulseGridContext"
+import flashCss from "./PulseGridLaneFlash.sass?inline"
 import {PulseGridLaneLogic} from "./PulseGridLaneLogic"
 import {PulseGridLaneMenus} from "./PulseGridLaneMenus"
+
+const flashClass = Html.adoptStyleSheet(flashCss, "PulseGridLaneFlash")
 
 type Construct = {
     inner: Terminator
@@ -95,7 +98,7 @@ export const PulseGridLaneRow = ({inner, context, doc, lane, columns, anySolo, p
         ContextMenu.subscribe(head, collector => PulseGridLaneMenus.lane(context, lane, () => rename(collector.client))
             .forEach(group => collector.addItems(...group))))
     const element: HTMLElement = (
-        <div className={Html.buildClassList("row", PulseGridLaneLogic.isQuiet(lane, anySolo) && "quiet")}
+        <div className={Html.buildClassList("row", flashClass, PulseGridLaneLogic.isQuiet(lane, anySolo) && "quiet")}
              data-lane={lane.id}
              style={{"--lane": `hsl(${lane.hue} 98% 60%)`}}>
             {head}
@@ -108,5 +111,14 @@ export const PulseGridLaneRow = ({inner, context, doc, lane, columns, anySolo, p
             </div>
         </div>
     )
+    // An agent changed this lane: play the highlight. The row is built again after a change, and this catches up
+    // with the flash still running, so the new row plays it too. The context empties `flash` once it has played.
+    inner.own(Events.subscribe(element, "animationend", () => element.classList.remove("flash")))
+    inner.own(context.flash.catchupAndSubscribe(owner => {
+        if (!owner.getValue().includes(lane.id)) {return}
+        element.classList.remove("flash")
+        void element.offsetWidth // restart the animation when it is already playing
+        element.classList.add("flash")
+    }))
     return {element, cells, length}
 }

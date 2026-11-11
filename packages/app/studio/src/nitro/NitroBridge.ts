@@ -4,6 +4,7 @@ import {Nullable, Option, RuntimeNotifier, tryCatch} from "@opendaw/lib-std"
 import {ProjectBundle} from "@opendaw/studio-core"
 import type {StudioService} from "@/service/StudioService"
 import {NitroGenerate} from "@/nitro/NitroGenerate"
+import type {PulseGridLiveEntry} from "@/ui/devices/instruments/PulseGridDeviceEditor/PulseGridAgentInbox"
 
 type Session = { key: string, revision: number, service: StudioService, writable: boolean, saving: boolean }
 
@@ -47,6 +48,25 @@ const show = (text: string, tone: "ok" | "busy" | "error"): void => {
     label.style.color = tone === "ok" ? "#8fd18f" : tone === "busy" ? "#d1c48f" : "#e08a8a"
 }
 
+// A message for a few seconds, then the chip says what it said before (an agent's note when no window shows it).
+const GlanceMillis = 4_000
+const glance: { timer: ReturnType<typeof setTimeout> | undefined, text: string, color: string } =
+    {timer: undefined, text: "", color: ""}
+
+const showBriefly = (text: string, tone: "ok" | "error"): void => {
+    if (glance.timer === undefined) {
+        glance.text = label?.textContent ?? "Nitro DAW"
+        glance.color = label?.style.color ?? ""
+    } else {clearTimeout(glance.timer)}
+    show(text, tone)
+    glance.timer = setTimeout(() => {
+        glance.timer = undefined
+        if (label === null) {return}
+        label.textContent = glance.text
+        label.style.color = glance.color
+    }, GlanceMillis)
+}
+
 const fail = (message: string): void => {
     show(`Nitro · ${message}`, "error")
     RuntimeNotifier.info({headline: "Nitro", message}).finally()
@@ -63,6 +83,35 @@ const renew = async (): Promise<void> => {
     if (again !== null && again.ok) {return}
     session.writable = false
     fail("This tab lost the edit lease. Reopen the project from Nitro to keep editing.")
+}
+
+const PollMillis = 1_000
+
+// While this tab holds the lease it asks Nitro once a second for a PulseGrid request an agent queued for this
+// project, runs it on the live project and posts the answer (AGENT_WIRE.md section 2). One ask at a time.
+const poll = async (current: Session): Promise<void> => {
+    while (session === current && current.writable) {
+        const taken = await fetch(route(current.key, "/pulsegrid/take"), {method: "POST", headers: WriteHeaders})
+            .catch(() => null)
+        if (taken !== null && taken.status === 423) {return}
+        if (taken !== null && taken.ok) {
+            try {
+                const {request} = await taken.json() as { request: Nullable<PulseGridLiveEntry> }
+                if (request !== null && request !== undefined) {
+                    const {PulseGridAgentInbox} = await import("@/ui/devices/instruments/PulseGridDeviceEditor/PulseGridAgentInbox")
+                    const answer = PulseGridAgentInbox.run(current.service, request, showBriefly)
+                    const sent = await fetch(route(current.key, `/pulsegrid/answer/${encodeURIComponent(request.id)}`), {
+                        method: "POST", headers: {...WriteHeaders, "content-type": "application/json"},
+                        body: JSON.stringify(answer)
+                    }).catch(() => null)
+                    if (sent !== null && sent.status === 423) {return}
+                }
+            } catch (error) {
+                console.error("PulseGrid agent poll failed", error)
+            }
+        }
+        await new Promise(resolve => setTimeout(resolve, PollMillis))
+    }
 }
 
 const release = (): void => {
@@ -99,6 +148,7 @@ export namespace NitroBridge {
         Reflect.set(window, "nitroDaw", {save, status: () => ({...session, service: undefined})})
         show(`Nitro · ${title} · revision ${revision}`, "ok")
         NitroGenerate.attach(service, key)
+        poll(session).finally()
     }
 
     export const save = async (): Promise<void> => {

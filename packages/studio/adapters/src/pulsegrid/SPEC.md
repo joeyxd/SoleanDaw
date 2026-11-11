@@ -217,3 +217,41 @@ When the sequencer's length is not 16 the lanes get an own length of 16, so the 
 
 A new drum lane lands under the last drum lane and is named after its sample without the machine
 (`TR-808 Cowbell` is `Cowbell`), with a number when that name is taken.
+
+## 7. Agents: requests, and where they run (`PulseGridRequests`)
+
+An agent never touches boxes. It sends one request, Nitro carries it to wherever the project is, and the same
+function answers it there: `PulseGridRequests.handle(boxGraph, editing, request)`.
+
+| the project is | who runs the request | the change |
+|---|---|---|
+| open in Joi's tab (the tab holds the edit lease) | the tab, on its live project | lands while it plays, heard at the next pattern boundary; one undo step in his history; saved when he saves |
+| not open | the DAW sidecar, headless, on the last saved revision | saved by Nitro as the next revision, with the agent as its author |
+
+### The request
+
+    {"track": "Drums", "ops": [{"op": "setPatternText", "lane": "hat", "variation": "B", "text": "|x-x- x-x- x-x- xxxx|"}]}
+
+Exactly one of `read: true` (answer the whole PulseGrid as `toText`), `ops` (1 to 64 ops of section 5) or `text`
+(lines of the `toText` grammar, read by `parseText`; pattern lines sit under a `scene <n> <V>` heading, a settings
+line such as `swing 58` stands alone). `track` is the PulseGrid's track: its name (case does not matter) or its id;
+it may be left out when the project has one PulseGrid. No other field.
+
+A request that changes anything is one undo step and all or nothing: when any op is refused, nothing changes.
+
+### The answer
+
+    {"ok": true, "track": {"id": "…", "name": "Drums"}, "results": [{"ok": true, "op": "setPatternText", "lines": ["scene 1 B hat |x-x- x-x- x-x- xxxx|"]}]}
+    {"ok": true, "track": {…}, "text": "PulseGrid \"Drums\"\nlength 16 …"}
+    {"ok": false, "track": {…}, "op": 2, "error": "step 99 is not allowed; expected 1 to 16"}
+
+`results` carry each op's new text lines (section 5, "What an op answers"), so the agent sees what landed without
+reading everything again. `op` (from 1) names the refused op; it is absent when the request itself was refused.
+
+### What Nitro adds around it (not part of the request)
+
+- `note`: one line from the agent saying what it did ("busier hats in B"), 1 to 80 characters, required with
+  `ops` and `text`. The tab shows `<agent>: <note>` as the window's toast and flashes the lanes that changed.
+- Sounds by name: in `addLane` and `setLaneSound` the agent may write `"sound": {"catalog": "sample:<uuid>"}`.
+  Nitro looks the id up in its sound catalogue (the One Shots folders of the openDAW sample library) and puts the
+  full sound input of section 5 in its place before the request leaves Nitro. The model never sees catalogue ids.
