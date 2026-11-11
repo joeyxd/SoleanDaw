@@ -378,6 +378,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "device-pulsegrid-lane"
+version = "0.0.0"
+dependencies = [
+ "abi",
+ "math",
+]
+
+[[package]]
 name = "device-revamp"
 version = "0.0.0"
 dependencies = [

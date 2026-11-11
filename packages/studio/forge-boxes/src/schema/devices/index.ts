@@ -42,6 +42,7 @@ import {ScriptValueBox} from "./audio-effects/ScriptValueBox"
 import {ScriptBufferBox} from "./audio-effects/ScriptBufferBox"
 import {ScriptBufferChunkBox} from "./audio-effects/ScriptBufferChunkBox"
 import {SpielwerkDeviceBox} from "./midi-effects/SpielwerkDeviceBox"
+import {PulseGridLaneDeviceBox} from "./midi-effects/PulseGridLaneDeviceBox"
 import {ApparatDeviceBox} from "./instruments/ApparatDeviceBox"
 import {CubedDeviceBox} from "./instruments/CubedDeviceBox"
 import {NoopInstrumentBox} from "./instruments/NoopInstrumentBox"
@@ -88,6 +89,7 @@ export const DeviceDefinitions = [
     ArpeggioDeviceBox,
     PitchDeviceBox,
     ZeitgeistDeviceBox,
+    PulseGridLaneDeviceBox,
     NeuralAmpDeviceBox,
     WclapDeviceBox,
     WclapParameterBox,

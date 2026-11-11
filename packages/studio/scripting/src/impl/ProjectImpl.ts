@@ -1,7 +1,7 @@
-import {AudioUnitBox, GrooveShuffleBox, ProjectMetaBox} from "@opendaw/studio-boxes"
+import {AudioUnitBox, GrooveShuffleBox, InstrumentCompositeBox, ProjectMetaBox} from "@opendaw/studio-boxes"
 import {AudioData, ppqn} from "@opendaw/lib-dsp"
 import {AudioUnitType, Colors, IconSymbol} from "@opendaw/studio-enums"
-import {ProjectSkeleton, Validator} from "@opendaw/studio-adapters"
+import {ProjectSkeleton, PulseGridLaneSpec, Validator} from "@opendaw/studio-adapters"
 import {asInstanceOf, clamp, float, isDefined, isNull, Nullable, panic, tryCatch, UUID} from "@opendaw/lib-std"
 import {
     AnyAudioUnit,
@@ -22,6 +22,7 @@ import {
     OutputAudioUnit,
     Project,
     ProjectMeta,
+    PulseGrid,
     SignatureTrack,
     TempoTrack,
     TimeSignature
@@ -32,6 +33,7 @@ import {Fields} from "./Fields"
 import {Guard} from "./Guard"
 import {AudioUnitImpls, AuxAudioUnitImpl, GroupAudioUnitImpl, InstrumentAudioUnitImpl} from "./AudioUnits"
 import {GrooveShuffleImpl} from "./GrooveShuffleImpl"
+import {PulseGridImpl} from "./PulseGridImpl"
 import {MarkerImpl, Markers} from "./timeline/Markers"
 import {TempoTrackImpl} from "./timeline/TempoTrackImpl"
 import {SignatureTrackImpl} from "./timeline/SignatureTrackImpl"
@@ -170,6 +172,13 @@ export class ProjectImpl implements Project {
     get instrumentUnits(): ReadonlyArray<InstrumentAudioUnit> {
         return this.audioUnits.filter((unit): unit is InstrumentAudioUnitImpl => unit instanceof InstrumentAudioUnitImpl)
     }
+    get pulseGrids(): ReadonlyArray<PulseGrid> {
+        return this.audioUnits.flatMap(unit => {
+            if (!(unit instanceof InstrumentAudioUnitImpl) || !(unit.instrumentBox instanceof InstrumentCompositeBox)) {return []}
+            const grid = PulseGridImpl.find(this.#context, unit.instrumentBox)
+            return grid.isEmpty() ? [] : [grid.unwrap()]
+        })
+    }
     get auxUnits(): ReadonlyArray<AuxAudioUnit> {
         return this.audioUnits.filter((unit): unit is AuxAudioUnitImpl => unit instanceof AuxAudioUnitImpl)
     }
@@ -189,6 +198,14 @@ export class ProjectImpl implements Project {
             Props.apply(unit, rest)
             Props.apply(unit.instrument, instrument, "instrument")
             return unit as unknown as InstrumentAudioUnit<K>
+        })
+    }
+
+    addPulseGrid(props?: AudioUnitProps, lanes?: ReadonlyArray<PulseGridLaneSpec>): PulseGrid {
+        return this.#context.edit(() => {
+            const unit = AudioUnitImpls.createPulseGridUnit(this.#context, props?.label, lanes)
+            Props.apply(unit, Props.without(props, "label"))
+            return PulseGridImpl.find(this.#context, asInstanceOf(unit.instrumentBox, InstrumentCompositeBox)).unwrap()
         })
     }
 

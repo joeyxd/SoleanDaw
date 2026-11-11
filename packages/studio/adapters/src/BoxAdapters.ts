@@ -64,6 +64,8 @@ import {
     NoteEventCollectionBox,
     NoteRegionBox,
     PitchDeviceBox,
+    PulseGridBox,
+    PulseGridLaneDeviceBox,
     AudioEffectCompositeBox,
     AudioEffectCompositeCellBox,
     InstrumentCompositeBox,
@@ -187,6 +189,8 @@ import {TransientMarkerBoxAdapter} from "./audio/TransientMarkerBoxAdapter"
 import {WarpMarkerBoxAdapter} from "./audio/WarpMarkerBoxAdapter"
 import {AudioTimeStretchBoxAdapter} from "./audio/AudioTimeStretchBoxAdapter"
 import {SignatureEventBoxAdapter} from "./timeline/SignatureEventBoxAdapter"
+import {PulseGridBoxAdapter} from "./pulsegrid/PulseGridBoxAdapter"
+import {PulseGridLaneDeviceBoxAdapter} from "./devices/midi-effects/PulseGridLaneDeviceBoxAdapter"
 
 export class BoxAdapters implements Terminable {
     readonly #context: BoxAdaptersContext
@@ -242,6 +246,8 @@ export class BoxAdapters implements Terminable {
     #create(unknownBox: Box): BoxAdapter {
         return asDefined(unknownBox.accept<BoxVisitor<BoxAdapter>>({
             visitArpeggioDeviceBox: (box: ArpeggioDeviceBox) => new ArpeggioDeviceBoxAdapter(this.#context, box),
+            visitPulseGridBox: (box: PulseGridBox) => new PulseGridBoxAdapter(this.#context, box),
+            visitPulseGridLaneDeviceBox: (box: PulseGridLaneDeviceBox) => new PulseGridLaneDeviceBoxAdapter(this.#context, box),
             visitAudioBusBox: (box: AudioBusBox): BoxAdapter => new AudioBusBoxAdapter(this.#context, box),
             visitAudioClipBox: (box: AudioClipBox) => new AudioClipBoxAdapter(this.#context, box),
             visitAudioFileBox: (box: AudioFileBox) => new AudioFileBoxAdapter(this.#context, box),

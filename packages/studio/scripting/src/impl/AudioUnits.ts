@@ -1,7 +1,7 @@
 import {AudioBusBox, AudioUnitBox, AuxSendBox, TrackBox} from "@opendaw/studio-boxes"
 import {Box, Field, IndexedBox} from "@opendaw/lib-box"
 import {AudioSendRouting, AudioUnitType, IconSymbol, Pointers} from "@opendaw/studio-enums"
-import {AudioUnitFactory, InstrumentFactories, ProjectQueries, TrackType} from "@opendaw/studio-adapters"
+import {AudioUnitFactory, InstrumentFactories, ProjectQueries, PulseGridFactory, PulseGridLaneSpec, TrackType} from "@opendaw/studio-adapters"
 import {asInstanceOf, bipolar, float, int, isDefined, isInstanceOf, isNull, Nullable, Option, Optional, panic, Strings, UUID} from "@opendaw/lib-std"
 import {
     AnyAudioEffect,
@@ -280,16 +280,15 @@ export namespace AudioUnitImpls {
         return name
     }
 
-    export const createInstrumentUnit = (context: Context, key: keyof Instruments, label: Optional<string>): InstrumentAudioUnitImpl => {
-        Guard.oneOf(key, Object.keys(InstrumentFactories.Named), "key")
-        return context.edit(() => {
+    const createUnit = (context: Context, factory: {defaultName: string, trackType: TrackType}, label: Optional<string>,
+                        create: (host: Field<Pointers.InstrumentHost | Pointers.AudioOutput>, name: string) => unknown): InstrumentAudioUnitImpl =>
+        context.edit(() => {
             const {boxGraph, mandatoryBoxes: {rootBox}} = context.skeleton
-            const factory = InstrumentFactories.Named[key]
             const existingNames = ProjectQueries.existingInstrumentNames(rootBox)
             const audioUnitBox = AudioUnitFactory.create(context.skeleton, AudioUnitType.Instrument,
                 AudioUnitFactory.trackTypeToCapture(boxGraph, factory.trackType))
             const uniqueName = Strings.getUniqueName(existingNames, isDefined(label) ? Guard.string(label, "label") : factory.defaultName)
-            DeviceBoxes.createInstrument(boxGraph, key, audioUnitBox.input, uniqueName)
+            create(audioUnitBox.input, uniqueName)
             TrackBox.create(boxGraph, UUID.generate(), box => {
                 box.index.setValue(0)
                 box.type.setValue(factory.trackType)
@@ -298,6 +297,18 @@ export namespace AudioUnitImpls {
             })
             return wrap(context, audioUnitBox) as InstrumentAudioUnitImpl
         })
+
+    export const createInstrumentUnit = (context: Context, key: keyof Instruments, label: Optional<string>): InstrumentAudioUnitImpl => {
+        Guard.oneOf(key, Object.keys(InstrumentFactories.Named), "key")
+        return createUnit(context, InstrumentFactories.Named[key], label,
+            (host, name) => DeviceBoxes.createInstrument(context.boxGraph, key, host, name))
+    }
+
+    export const createPulseGridUnit = (context: Context, label: Optional<string>,
+                                        lanes: Optional<ReadonlyArray<PulseGridLaneSpec>>): InstrumentAudioUnitImpl => {
+        const factory = PulseGridFactory.Instrument
+        return createUnit(context, factory, label,
+            (host, name) => factory.create(context.boxGraph, host, name, factory.defaultIcon, lanes))
     }
 
     export const createBusUnit = (context: Context, type: AudioUnitType.Aux | AudioUnitType.Bus,

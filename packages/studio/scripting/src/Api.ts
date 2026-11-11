@@ -17,9 +17,43 @@ import {
 } from "@opendaw/lib-dsp"
 import {bipolar, float, int, Nullable, unitValue} from "@opendaw/lib-std"
 import {AudioSendRouting, TransientPlayMode, VoicingMode} from "@opendaw/studio-enums"
+import type {
+    PulseGridDoc,
+    PulseGridLaneDoc,
+    PulseGridLaneRef,
+    PulseGridLaneSpec,
+    PulseGridNote,
+    PulseGridNoteInput,
+    PulseGridOp,
+    PulseGridOpName,
+    PulseGridOpResult,
+    PulseGridPatternDoc,
+    PulseGridSettings,
+    PulseGridSlot,
+    PulseGridSound,
+    PulseGridSoundInput,
+    PulseGridVariation
+} from "@opendaw/studio-adapters"
 
 export {PPQN, FFT, Chord, dbToGain, gainToDb, midiToHz, ClassicWaveform, VoicingMode, Mixing, TransientPlayMode, AudioSendRouting, WavFile}
 export type {ppqn, seconds, bpm, samples}
+export type {
+    PulseGridDoc,
+    PulseGridLaneDoc,
+    PulseGridLaneRef,
+    PulseGridLaneSpec,
+    PulseGridNote,
+    PulseGridNoteInput,
+    PulseGridOp,
+    PulseGridOpName,
+    PulseGridOpResult,
+    PulseGridPatternDoc,
+    PulseGridSettings,
+    PulseGridSlot,
+    PulseGridSound,
+    PulseGridSoundInput,
+    PulseGridVariation
+}
 
 /**
  * A sample known to the studio. Obtain one via {@link Api.addSample} or {@link Api.listSamples}.
@@ -1219,6 +1253,39 @@ export interface InstrumentComposite extends Instrument {
         /** The instrument this layer plays, typed by the given key */
         readonly instrument: LayerInstruments[K]
     }
+}
+
+/**
+ * A step sequencer: one instrument whose lanes hold patterns inside it, so the track needs no notes.
+ * Everything is read as text or data and changed through operations, the same ones the editor uses.
+ * Counts start at 1 and amounts are percents.
+ * @group Instruments
+ * @example
+ * ```ts
+ * const grid = project.addPulseGrid({label: "Beat"})
+ * grid.apply([{op: "setPatternText", lane: "Kick", text: "|x--- x--- x--- x---|"}])
+ * console.log(grid.text)
+ * ```
+ */
+export interface PulseGrid {
+    /** The name of the sequencer */
+    readonly label: string
+    /** The audio unit that holds it, for its volume, tracks and effects */
+    readonly unit: InstrumentAudioUnit<"InstrumentComposite">
+    /** The whole sequencer as text, one look: settings, scenes, every lane with its sound, every pattern */
+    readonly text: string
+    /** The whole sequencer as plain data */
+    readonly doc: PulseGridDoc
+    /**
+     * Run operations in order, stopping at the first that fails. A failed one changes nothing.
+     * @returns One result per operation that ran, the failed one last. Each holds the new text lines of what changed
+     */
+    apply(ops: ReadonlyArray<PulseGridOp>): ReadonlyArray<PulseGridOpResult>
+    /**
+     * Apply the text form, as {@link PulseGrid.text} writes it. Throws if the text does not parse, changing nothing
+     * @returns One result per operation that ran
+     */
+    applyText(text: string): ReadonlyArray<PulseGridOpResult>
 }
 
 /**
@@ -2627,6 +2694,14 @@ export interface Project {
      * ```
      */
     addInstrumentUnit<K extends keyof Instruments>(key: K, props?: AudioUnitProps, instrument?: DeepPartial<Instruments[K]>): InstrumentAudioUnit<K>
+    /** The step sequencers of this project */
+    readonly pulseGrids: ReadonlyArray<PulseGrid>
+    /**
+     * Add a step sequencer with its own instrument unit and track.
+     * @param props - Unit settings
+     * @param lanes - The lanes and their sounds. Leave out for the default kit: five TR-808 drums and two FM voices
+     */
+    addPulseGrid(props?: AudioUnitProps, lanes?: ReadonlyArray<PulseGridLaneSpec>): PulseGrid
     /** Add an auxiliary (send effect) unit */
     addAuxUnit(props?: BusAudioUnitProps): AuxAudioUnit
     /** Add a group (bus) unit */
