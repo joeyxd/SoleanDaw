@@ -3,6 +3,7 @@ import {Events} from "@opendaw/lib-dom"
 import {PulseGridActions, PulseGridView} from "@opendaw/studio-adapters"
 import {PulseGridContext} from "./PulseGridContext"
 import {PulseGridLaneLogic} from "./PulseGridLaneLogic"
+import {PulseGridAudition} from "./PulseGridAudition"
 
 // What a reorder drag needs to know about the frame it happens in.
 export type PulseGridFrameRef = {
@@ -28,10 +29,11 @@ export namespace PulseGridLaneDrags {
             return lane !== undefined && PulseGridView.steps(doc, lane).steps[target - 1] !== undefined
         }
         const apply = (targets: ReadonlyArray<int>): void => {
-            const ops = targets.filter(target => stateOf(target) !== on)
-                .flatMap(target => PulseGridActions.setStep(laneId, target, on))
+            const changed = targets.filter(target => stateOf(target) !== on)
+            const ops = changed.flatMap(target => PulseGridActions.setStep(laneId, target, on))
             if (ops.length === 0) {return}
             context.send(ops, false)
+            if (on) {changed.forEach(step => PulseGridAudition.step(context, laneId, step))}
             state.changed = true
         }
         apply([step])

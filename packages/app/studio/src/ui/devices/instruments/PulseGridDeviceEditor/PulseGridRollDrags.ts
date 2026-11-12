@@ -52,7 +52,7 @@ export namespace PulseGridRollDrags {
         const roll = PulseGridView.roll(startDoc, lane)
         const pitch = roll.rows[at.row].pitch
         if (tool === "listen") {
-            PulseGridAudition.listen(context, lane.id, pitch)
+            PulseGridAudition.step(context, lane.id, at.step, pitch)
             session.terminate()
             return
         }

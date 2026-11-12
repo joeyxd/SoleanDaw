@@ -1967,6 +1967,105 @@ fn live_note_signal_reaches_a_cell_composites_sequencer() {
 }
 
 #[test]
+fn child_signal_enters_only_its_instrument_after_midi() {
+    const MIDI_FIELD: u16 = 51;
+    let mut engine = layer_engine();
+    engine.devices.push(stub_device(DEVICE_KIND_MIDI_EFFECT));
+    engine.device_box_types.push(("TestMidi".to_string(), 2));
+    engine.composites[0].cell_midi_field = MIDI_FIELD;
+    let mut boxes = layer_boxes();
+    for cell in boxes.iter_mut().filter(|item| item.uuid == LAYER_A || item.uuid == LAYER_B) {
+        cell.fields.insert(MIDI_FIELD, FieldValue::Hook);
+    }
+    boxes.push(graph_box(FX_A, "TestMidi", &[
+        (HOST_KEY, FieldValue::Pointer(Some(Address::of(LAYER_A, vec![MIDI_FIELD])))),
+        (EFFECT_INDEX_KEY, FieldValue::Int32(0))
+    ]));
+    engine.graph = BoxGraph::from_boxes(boxes);
+    let mut unit = engine.build_unit(UNIT);
+    engine.reconcile_one(&mut unit);
+    engine.audio_units.push(unit);
+    engine.note_signal(LAYER_A, super::NoteSignal::On {pitch: 62, velocity: 0.8});
+    let binding = match &engine.audio_units[0].wired {
+        Some(Wired::Composite(wired)) => &wired.binding,
+        _ => panic!("composite")
+    };
+    let chain = binding.child_pull_chain(LAYER_A).unwrap();
+    assert!(matches!(&chain, crate::PullLink::Preview {upstream, ..} if matches!(**upstream, crate::PullLink::MidiFx {..})));
+    assert!(!matches!(binding.child_pull_chain(LAYER_B), Some(crate::PullLink::Preview {..})));
+    let mut sources = Vec::new();
+    binding.collect_note_sources(&mut sources);
+    let stopped = BlockFlags::create(false, false, false, false);
+    for source in sources {
+        source.borrow_mut().process_notes(0.0, 5.0, stopped, &mut |_| panic!("no MIDI input sees the child signal"));
+    }
+    let pull = |from, chain| {
+        unsafe { crate::PULL.get() }.current = Some(chain);
+        let blank = abi::EventRecord {position: 0.0, offset: 0, kind: 0, id: 0, pitch: 0, velocity: 0.0, cent: 0.0, duration: 0.0};
+        let mut records = [blank; 16];
+        let count = crate::pull_events_into(from, from + 5.0, stopped.0, &mut records, 0);
+        unsafe { crate::PULL.get() }.current = None;
+        (records, count)
+    };
+    // Native MIDI stubs return no events. Only the instrument's preview can supply this note.
+    let (started, count) = pull(0.0, chain.clone());
+    assert_eq!(count, 1);
+    assert_eq!((started[0].kind, started[0].pitch), (abi::EVENT_NOTE_ON, 62));
+    assert!(started[0].id < 0x8000_0000);
+    engine.note_signal(LAYER_A, super::NoteSignal::Off {pitch: 62});
+    let (ended, count) = pull(5.0, chain);
+    assert_eq!(count, 1);
+    assert_eq!((ended[0].kind, ended[0].id), (abi::EVENT_NOTE_OFF, started[0].id));
+}
+
+#[test]
+fn unit_signal_still_reaches_every_child_upstream() {
+    let mut engine = layer_engine();
+    engine.graph = BoxGraph::from_boxes(layer_boxes());
+    let mut unit = engine.build_unit(UNIT);
+    engine.reconcile_one(&mut unit);
+    engine.audio_units.push(unit);
+    engine.note_signal(UNIT, super::NoteSignal::On {pitch: 64, velocity: 1.0});
+    let binding = match &engine.audio_units[0].wired {
+        Some(Wired::Composite(wired)) => &wired.binding,
+        _ => panic!("composite")
+    };
+    let mut sources = Vec::new();
+    binding.collect_note_sources(&mut sources);
+    assert_eq!(sources.len(), 2);
+    for source in &sources {
+        let mut events = Vec::new();
+        source.borrow_mut().process_notes(0.0, 5.0, BlockFlags::create(false, false, false, false), &mut |event| events.push(event));
+        assert!(matches!(events.as_slice(), [engine_env::event::Event::NoteStart {pitch: 64, ..}]));
+    }
+    assert!(!matches!(binding.child_pull_chain(LAYER_A), Some(crate::PullLink::Preview {..})));
+    assert!(!matches!(binding.child_pull_chain(LAYER_B), Some(crate::PullLink::Preview {..})));
+}
+
+#[test]
+fn preview_merge_preserves_a_full_chain_and_its_chokes() {
+    use engine_env::note_event_source::NoteEventSource;
+    let chain = Rc::new(RefCell::new(NoteSequencer::preview()));
+    for pitch in 0..128 { chain.borrow_mut().push_raw_note_on(pitch, 1.0); }
+    let source: engine_env::note_event_instrument::SharedNoteEventSource = chain;
+    let preview = Rc::new(RefCell::new(NoteSequencer::preview()));
+    preview.borrow_mut().audition_note(72, 240.0, 0.8);
+    let gate = Rc::new(Cell::new(false));
+    let upstream = crate::PullLink::SlotRoute {upstream: source, choke: Rc::from((0..128).collect::<Vec<i32>>()), gate: gate.clone()};
+    unsafe { crate::PULL.get() }.current = Some(crate::PullLink::Preview {upstream: Rc::new(upstream), source: preview, gate});
+    let blank = abi::EventRecord {position: 0.0, offset: 0, kind: 0, id: 0, pitch: 0, velocity: 0.0, cent: 0.0, duration: 0.0};
+    let mut records = [blank; crate::DEVICE_MAX_EVENTS * 2];
+    let count = crate::pull_events_into(0.0, 5.0, BlockFlags::create(false, false, false, false).0, &mut records, 0);
+    unsafe { crate::PULL.get() }.current = None;
+    assert_eq!(count, 257);
+    for pitch in 0..128 {
+        assert_eq!(records[pitch * 2].kind, abi::EVENT_CHOKE);
+        assert_eq!((records[pitch * 2 + 1].kind, records[pitch * 2 + 1].pitch), (abi::EVENT_NOTE_ON, pitch as u32));
+    }
+    assert_eq!((records[256].kind, records[256].pitch), (abi::EVENT_NOTE_ON, 72));
+}
+
+#[test]
 fn a_nested_composite_builds_and_sums_its_subtree() {
     // A NESTED composite: a child of a composite is ITSELF a composite (recurses). Exercises `ChildBody::Nested`
     // build + survive + teardown (otherwise untested). OUTER hosts INNER (a composite) which hosts a LEAF voice.

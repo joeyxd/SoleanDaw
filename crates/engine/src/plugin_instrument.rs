@@ -8,7 +8,7 @@
 
 use alloc::boxed::Box;
 use alloc::rc::Rc;
-use core::cell::Cell;
+use core::cell::{Cell, RefCell};
 use alloc::string::String;
 use boxgraph::address::Uuid;
 use alloc::vec;
@@ -130,8 +130,32 @@ impl PluginInstrument {
     }
 
     pub(crate) fn set_pull_chain(&mut self, chain: PullLink) {
-        self.pull_chain = Some(chain);
+        self.pull_chain = Some(match self.pull_chain.take() {
+            Some(PullLink::Preview {source, gate, ..}) => PullLink::Preview {upstream: Rc::new(chain), source, gate},
+            _ => chain
+        });
     }
+
+    pub(crate) fn preview_source(&mut self, silent: bool) -> Rc<RefCell<engine_env::note_sequencer::NoteSequencer>> {
+        if let Some(PullLink::Preview {source, ..}) = &self.pull_chain { return source.clone(); }
+        // Allocate room off render so previews cannot crowd out chain releases or chokes.
+        let blank = EventRecord {position: 0.0, offset: 0, kind: 0, id: 0, pitch: 0, velocity: 0.0, cent: 0.0, duration: 0.0};
+        self.device_events = vec![blank; DEVICE_MAX_EVENTS * 2].into_boxed_slice();
+        self.descriptor[8] = self.device_events.len() as u32;
+        self.descriptor[9] = self.device_events.as_ptr() as u32;
+        let source = Rc::new(RefCell::new(engine_env::note_sequencer::NoteSequencer::preview()));
+        if let Some(upstream) = self.pull_chain.take() {
+            self.pull_chain = Some(PullLink::Preview {upstream: Rc::new(upstream), source: source.clone(), gate: Rc::new(Cell::new(silent))});
+        }
+        source
+    }
+
+    pub(crate) fn set_preview_silent(&self, silent: bool) {
+        if let Some(PullLink::Preview {gate, ..}) = &self.pull_chain { gate.set(silent); }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pull_chain(&self) -> Option<PullLink> { self.pull_chain.clone() }
 
     /// The peak/RMS broadcast slot of this instrument's output.
     pub(crate) fn meter_slot(&self) -> engine_env::telemetry::BroadcastSlot {
@@ -203,6 +227,7 @@ impl Processor for PluginInstrument {
         // buffered events.
         call_device_reset(self.reset_index, self.device_state.as_ptr() as u32);
         self.events.clear();
+        if let Some(PullLink::Preview {source, ..}) = &self.pull_chain { source.borrow_mut().stop_preview(); }
         self.meter.clear();
     }
 

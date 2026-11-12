@@ -65,6 +65,31 @@ pub(crate) struct CompositeBinding {
 }
 
 impl CompositeBinding {
+    pub(crate) fn note_signal(&self, uuid: Uuid, signal: crate::audio_unit::NoteSignal) -> bool {
+        use engine_env::note_event_source::NoteEventSource;
+        for child in &self.members {
+            if child.uuid == uuid {
+                if let ChildBody::Slot {cluster, ..} = &child.body {
+                    if let crate::audio_unit::ProcHandle::Instrument(processor) = &cluster.instrument.proc {
+                        let silent = child.gate.get() || child.strip.as_ref().is_some_and(|strip| strip.params.forced_silent.get());
+                        let source = processor.borrow_mut().preview_source(silent);
+                        let mut source = source.borrow_mut();
+                        match signal {
+                            crate::audio_unit::NoteSignal::On {pitch, velocity} => source.push_raw_note_on(pitch, velocity),
+                            crate::audio_unit::NoteSignal::Off {pitch} => source.push_raw_note_off(pitch),
+                            crate::audio_unit::NoteSignal::Audition {pitch, duration, velocity} => source.audition_note(pitch, duration, velocity)
+                        }
+                    }
+                }
+                return true;
+            }
+            if let ChildBody::Nested {binding} | ChildBody::NestedCell {binding, ..} = &child.body {
+                if binding.note_signal(uuid, signal) { return true; }
+            }
+        }
+        false
+    }
+
     /// Whether the children are CELLS: their sequencers read launched clips shared, the engine advances once.
     pub(crate) fn cell_based(&self) -> bool {
         self.spec.cell_instrument_field != 0
@@ -176,6 +201,17 @@ impl CompositeBinding {
     #[cfg(test)]
     fn find(&self, uuid: Uuid) -> Option<&CompositeChild> {
         self.members.iter().find(|child| child.uuid == uuid)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn child_pull_chain(&self, uuid: Uuid) -> Option<crate::PullLink> {
+        self.find(uuid).and_then(|child| match &child.body {
+            ChildBody::Slot {cluster, ..} => match &cluster.instrument.proc {
+                crate::audio_unit::ProcHandle::Instrument(processor) => processor.borrow().pull_chain(),
+                _ => None
+            },
+            _ => None
+        })
     }
 
     /// The instrument node of a child, by uuid — for tests / introspection.
@@ -436,6 +472,11 @@ impl Engine {
                 // AFTER every read: silent (mute / not-soloed) or not this index's route owner = no starts.
                 // A CELL's index is its position, not a note route, and a layer mutes at its strip.
                 child.gate.set(!cell_based && (info.silent || !info.route_owner));
+                if let ChildBody::Slot {cluster, ..} = &child.body {
+                    if let crate::audio_unit::ProcHandle::Instrument(processor) = &cluster.instrument.proc {
+                        processor.borrow().set_preview_silent(info.silent || (!cell_based && !info.route_owner));
+                    }
+                }
                 if cell_based {
                     if let Some(slot_strip) = &child.strip {
                         slot_strip.params.forced_silent.set(info.silent);

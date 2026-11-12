@@ -5,6 +5,7 @@ import {ContextMenu} from "@opendaw/studio-core"
 import {PulseGridActions, PulseGridDoc, PulseGridLaneDoc, PulseGridView} from "@opendaw/studio-adapters"
 import {Surface} from "@/ui/surface/Surface.tsx"
 import {PulseGridContext} from "./PulseGridContext"
+import {PulseGridAudition} from "./PulseGridAudition"
 import flashCss from "./PulseGridLaneFlash.sass?inline"
 import {PulseGridLaneLogic} from "./PulseGridLaneLogic"
 import {PulseGridLaneMenus} from "./PulseGridLaneMenus"
@@ -56,6 +57,10 @@ export const PulseGridLaneRow = ({inner, context, doc, lane, columns, anySolo, p
         inner.own(Events.subscribe(cell, "pointerdown", (event: PointerEvent) => {
             if (event.button !== 0) {return}
             event.preventDefault()
+            if (context.tool.getValue() === "listen") {
+                PulseGridAudition.step(context, lane.id, step)
+                return
+            }
             paint(cell, lane.id, step, value === undefined)
         }))
         if (value !== undefined) {

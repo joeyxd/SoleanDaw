@@ -307,14 +307,17 @@ length says (4 is one step); the part beyond the pattern's end is not drawn.
   Select: a press picks a note (Shift adds it to the pick or takes it out), a drag from an empty place picks
   what its box touches, a press on an empty place lets go. Picked notes are dragged to other steps and rows (with
   Alt they are copied), the right end of a picked note changes its length, Delete removes them.
-  Listen: a press sounds the row's pitch on that lane and changes nothing.
+  Listen: a press sounds every note on that step through that lane's instrument alone. In an empty place of a
+  roll it sounds the row's pitch. It works while stopped, lasts one step, honours mute and solo, and changes
+  nothing. A drum lane always sounds its lane pitch. The lane's MIDI effects do not hear the preview.
   A step row keeps its own gesture under every tool (a press turns the step on or off, a drag paints), except
-  under Listen, where a press sounds the lane.
+  under Listen, where a press sounds the notes on the step and changes nothing.
 - Lengths set by a drag are whole steps. Finer lengths, offsets and repeats are written as text or ops.
 - The keyboard shows the octave of the selected lane's pitch with one under and one over it. Keys of the key
   and scale are lit, the root stands out, the lane pitch is ringed, and while the song plays the keys the
   selected lane sounds light up (`PulseGridView.sounding`). A press on a key sounds it on the selected lane; on a
   melodic lane it also becomes the lane pitch (`setLane`), the note a press on its closed row puts in. A drum
-  lane's pitch is its tuning and the keyboard does not change it.
+  lane's pitch is its tuning: the keyboard does not change it and a key sounds the lane pitch. A newly painted
+  note sounds once too. The sound itself never changes the project.
 - Which lanes are open, the tool and the picked notes belong to the screen, not to the document: an agent
   neither sees nor needs them.

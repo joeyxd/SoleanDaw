@@ -90,6 +90,8 @@ pub struct NoteSequencer {
     audition_retainer: EventSpanRetainer<RetainedNote>,
     random: Mulberry32,
     next_id: u64,
+    live_id_mask: u64,
+    preview_reset: bool,
     truncate_at_region_end: Rc<Cell<bool>>
 }
 
@@ -105,8 +107,28 @@ impl NoteSequencer {
             audition_retainer: EventSpanRetainer::new(),
             random: Mulberry32::new(CHANCE_SEED),
             next_id: 0,
+            live_id_mask: u64::MAX,
+            preview_reset: false,
             truncate_at_region_end: Rc::new(Cell::new(false))
         }
+    }
+
+    /// Live previews stay below the PulseGrid lane device's high note ids.
+    pub fn preview() -> Self {
+        struct Empty;
+        impl NoteContentSource for Empty {
+            fn for_each_track(&self, _visit: &mut dyn FnMut(&[u8; 16], &dyn NoteTrackAccess)) {}
+        }
+        let mut source = Self::new(Box::new(Empty), Rc::new(RefCell::new(ClipSequencer::new())));
+        source.live_id_mask = 0x7fff_ffff;
+        source
+    }
+
+    pub fn stop_preview(&mut self) {
+        self.raw_notes.retain(|note| note.running.is_some());
+        for note in &mut self.raw_notes { note.gate = false; }
+        self.audition_queue.clear();
+        self.preview_reset = true;
     }
 
     /// The TS preference `playback.truncateNotesAtRegionEnd` (default FALSE: a note rings past its
@@ -129,7 +151,12 @@ impl NoteSequencer {
 impl NoteEventSource for NoteSequencer {
     fn process_notes(&mut self, from: f64, to: f64, flags: BlockFlags, sink: &mut dyn FnMut(Event)) {
         let read = flags.has(BlockFlags::TRANSPORTING | BlockFlags::PLAYING);
-        let discontinuous = flags.discontinuous();
+        let discontinuous = core::mem::take(&mut self.preview_reset) || flags.discontinuous();
+        if discontinuous && self.live_id_mask != u64::MAX {
+            for note in &mut self.raw_notes {
+                if note.running.is_some() { note.gate = false; }
+            }
+        }
         if !read || discontinuous {
             self.retainer.drain_all(|retained|
                 sink(Event::NoteComplete {id: retained.id, position: from, pitch: retained.pitch}));
@@ -155,7 +182,7 @@ impl NoteEventSource for NoteSequencer {
         while index < self.raw_notes.len() {
             if self.raw_notes[index].running.is_none() {
                 let id = self.next_id;
-                self.next_id += 1;
+                self.next_id = (self.next_id + 1) & self.live_id_mask;
                 let (pitch, velocity) = (self.raw_notes[index].pitch, self.raw_notes[index].velocity);
                 sink(Event::NoteStart {id, position: from, duration: f64::INFINITY, pitch, cent: 0.0, velocity});
                 self.raw_notes[index].running = Some(id);
@@ -174,7 +201,7 @@ impl NoteEventSource for NoteSequencer {
                 sink(Event::NoteComplete {id: retained.id, position: from, pitch: retained.pitch}));
             for ScheduledNote {pitch, duration, velocity} in self.audition_queue.drain(..) {
                 let id = self.next_id;
-                self.next_id += 1;
+                self.next_id = (self.next_id + 1) & self.live_id_mask;
                 sink(Event::NoteStart {id, position: from, duration, pitch, cent: 0.0, velocity});
                 self.audition_retainer.add_and_retain(RetainedNote {position: from, duration, id, pitch});
             }

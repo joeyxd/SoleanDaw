@@ -752,6 +752,7 @@ pub(crate) fn set_current_unit_note_bits(slot: Option<engine_env::telemetry::Bro
 #[derive(Clone)]
 enum PullLink {
     Source(SharedNoteEventSource),
+    Preview { upstream: Rc<PullLink>, source: Rc<RefCell<engine_env::note_sequencer::NoteSequencer>>, gate: Rc<Cell<bool>> },
     // A composite child's choke injector over a shared note source: pass every note through (the child device
     // filters to its own note), and ADD a `CHOKE` record when a note in `choke` (its sibling choke group) fires.
     // A leaf link like `Source`. `choke` is an `Rc` so cloning the link (each pull) does not allocate.
@@ -847,6 +848,28 @@ pub(crate) fn pull_events_into(from: f64, to: f64, flags: u32, out: &mut [EventR
     let count = match link {
         Some(PullLink::Source(ref source)) => pull_from_source(source, from, to, flags, out),
         Some(PullLink::SlotRoute {ref upstream, ref choke, ref gate}) => pull_from_slot_route(upstream, choke, gate, from, to, flags, out),
+        Some(PullLink::Preview {upstream, source, gate}) => {
+            let blank = EventRecord {position: 0.0, offset: 0, kind: 0, id: 0, pitch: 0, velocity: 0.0, cent: 0.0, duration: 0.0};
+            let mut preview = [blank; DEVICE_MAX_EVENTS];
+            let notes: SharedNoteEventSource = source.clone();
+            let preview_count = pull_from_slot_route(&notes, &[], &gate, from, to, flags, &mut preview[..out.len().min(DEVICE_MAX_EVENTS)]) as usize;
+            {
+                let pull = unsafe { PULL.get() };
+                pull.current = Some((*upstream).clone());
+                pull.note_bits = None;
+            }
+            let chain_capacity = DEVICE_MAX_EVENTS.min(out.len() - preview_count);
+            let count = pull_events_into(from, to, flags, &mut out[..chain_capacity], out_ptr) as usize;
+            // Keep chain records, including chokes, unchanged. Other effects may share a preview id;
+            // either completion then releases that id early, so a collision cannot leave a held voice.
+            out[count..count + preview_count].copy_from_slice(&preview[..preview_count]);
+            {
+                let pull = unsafe { PULL.get() };
+                pull.current = Some(PullLink::Preview {upstream, source, gate});
+                pull.note_bits = consumer_bits.clone();
+            }
+            (count + preview_count) as u32
+        }
         Some(PullLink::MidiFx {effect, upstream}) => {
             // Descend into the fx: swap in ITS params + clock-armed state + the upstream link, so the fx's own
             // `host_update_parameters` / `next_update_position` see the fx's automation and its upstream pull

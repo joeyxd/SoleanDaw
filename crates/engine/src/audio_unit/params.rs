@@ -923,11 +923,17 @@ impl Engine {
         params.collections = collections;
     }
 
-    /// Inject a live note signal into the unit identified by its `AudioUnitBox` uuid. Called OFF-render
+    /// Inject a live note signal into an audio unit or one composite child. Called OFF-render
     /// (between quanta); the note starts / releases at the next block, playing or stopped.
     pub(crate) fn note_signal(&self, unit: Uuid, signal: NoteSignal) {
         if let Some(binding) = self.audio_units.iter().find(|binding| binding.unit == unit) {
             note_signal_to_unit(binding, signal);
+        } else {
+            for binding in &self.audio_units {
+                if let Some(Wired::Composite(wired)) = &binding.wired {
+                    if wired.binding.note_signal(unit, signal) { break; }
+                }
+            }
         }
     }
 }

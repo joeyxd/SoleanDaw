@@ -95,6 +95,7 @@ export const PulseGridKeyboard = ({lifecycle, context}: Construct): HTMLElement 
         event.preventDefault()
         const pitch = Number(hit.dataset.pitch)
         PulseGridAudition.listen(context, lane.id, pitch)
+        // Hearing changes nothing. Choosing the note a melodic lane paints is the one thing a key writes.
         if (lane.kind === "melodic" && lane.pitch !== pitch) {context.send(PulseGridActions.setLanePitch(lane.id, pitch))}
     }))
     lifecycle.ownAll(
