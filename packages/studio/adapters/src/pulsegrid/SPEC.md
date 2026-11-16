@@ -309,7 +309,8 @@ length says (4 is one step); the part beyond the pattern's end is not drawn.
   Alt they are copied), the right end of a picked note changes its length, Delete removes them.
   Listen: a press sounds every note on that step through that lane's instrument alone. In an empty place of a
   roll it sounds the row's pitch. It works while stopped, lasts one step, honours mute and solo, and changes
-  nothing. A drum lane always sounds its lane pitch. The lane's MIDI effects do not hear the preview.
+  nothing. A drum lane always sounds its lane pitch. The lane's MIDI effects do not hear the preview. Play or
+  pause while a preview sounds stops it at once.
   A step row keeps its own gesture under every tool (a press turns the step on or off, a drag paints), except
   under Listen, where a press sounds the notes on the step and changes nothing.
 - Lengths set by a drag are whole steps. Finer lengths, offsets and repeats are written as text or ops.

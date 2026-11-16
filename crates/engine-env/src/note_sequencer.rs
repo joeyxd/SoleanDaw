@@ -92,6 +92,7 @@ pub struct NoteSequencer {
     next_id: u64,
     live_id_mask: u64,
     preview_reset: bool,
+    last_read: bool,
     truncate_at_region_end: Rc<Cell<bool>>
 }
 
@@ -109,6 +110,7 @@ impl NoteSequencer {
             next_id: 0,
             live_id_mask: u64::MAX,
             preview_reset: false,
+            last_read: false,
             truncate_at_region_end: Rc::new(Cell::new(false))
         }
     }
@@ -167,7 +169,11 @@ impl NoteEventSource for NoteSequencer {
             });
         }
         // AUDITION releases (TS: discontinuous -> stop all at `from`, else stop each at its clamped end).
-        if discontinuous {
+        // Play and pause switch the pulse range between the song position and the free-running one, with no
+        // discontinuity flag: an audition kept across the switch would ring until the other range reached
+        // its end, so the switch stops it too.
+        let switched = core::mem::replace(&mut self.last_read, read) != read;
+        if discontinuous || switched {
             self.audition_retainer.drain_all(|retained|
                 sink(Event::NoteComplete {id: retained.id, position: from, pitch: retained.pitch}));
         } else {
@@ -484,5 +490,37 @@ mod tests {
         let events = collect(&mut sequencer, 200.0, 205.0, BlockFlags::create(true, true, true, false));
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0], Event::NoteComplete {pitch: 60, position, ..} if position == 200.0));
+    }
+
+    #[test]
+    fn play_after_a_paused_audition_stops_it_at_the_switch() {
+        let mut sequencer = sequencer();
+        sequencer.audition_note(60, 100.0, 1.0);
+        // paused: the pulse range runs free, far past the song position
+        assert_eq!(collect(&mut sequencer, 5000.0, 5005.0, stopped()).len(), 1);
+        assert!(collect(&mut sequencer, 5005.0, 5010.0, stopped()).is_empty());
+        // play resumes at the song position and carries no discontinuity flag
+        let events = collect(&mut sequencer, 40.0, 45.0, playing());
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], Event::NoteComplete {pitch: 60, position, ..} if position == 40.0));
+        // and the other way: an audition started while playing stops at the pause
+        sequencer.audition_note(64, 100.0, 1.0);
+        assert_eq!(collect(&mut sequencer, 45.0, 50.0, playing()).len(), 1);
+        let events = collect(&mut sequencer, 5010.0, 5015.0, stopped());
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], Event::NoteComplete {pitch: 64, position, ..} if position == 5010.0));
+    }
+
+    #[test]
+    fn an_audition_queued_with_the_switch_still_sounds() {
+        let mut sequencer = sequencer();
+        assert!(collect(&mut sequencer, 5000.0, 5005.0, stopped()).is_empty());
+        sequencer.audition_note(60, 8.0, 1.0);
+        let events = collect(&mut sequencer, 40.0, 45.0, playing());
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], Event::NoteStart {pitch: 60, position, ..} if position == 40.0));
+        let events = collect(&mut sequencer, 45.0, 50.0, playing());
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], Event::NoteComplete {pitch: 60, position, ..} if position == 48.0));
     }
 }
