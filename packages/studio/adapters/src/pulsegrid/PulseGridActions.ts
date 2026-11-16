@@ -29,6 +29,13 @@ export type PulseGridRollRow = {pitch: int, name: string, root: boolean, inScale
 // pitch down, and the notes inside the effective length.
 export type PulseGridRoll = {length: int, own: boolean, rows: Array<PulseGridRollRow>, notes: Array<PulseGridNote>}
 
+// One row of the scenes column: the scene's name, whether it plays, the variation its thumbnail shows, and the
+// thumbnail: per lane (in lane order) its colour and which steps of the pattern's effective length hold a note.
+export type PulseGridSceneView = {
+    scene: int, name: string, playing: boolean, variation: PulseGridVariation,
+    thumbnail: Array<{hue: int, steps: Array<boolean>}>
+}
+
 // How far a roll reaches around the lane pitch, and the room it leaves beyond its outermost notes, in semitones.
 const RollReach = 12
 const RollRoom = 4
@@ -122,6 +129,44 @@ export namespace PulseGridView {
         const step = Math.floor(position / 240) % length
         return step < 0 ? step + length : step
     }
+
+    // The scenes column (SPEC.md section 9): scenes 1 to `sceneCount` with their name, whether they play, and a
+    // thumbnail per lane of the variation that plays for the playing scene, else A, else the first variation that
+    // holds anything.
+    export const scenes = (doc: PulseGridDoc): Array<PulseGridSceneView> =>
+        Array.from({length: doc.sceneCount}, (_, index) => {
+            const scene = index + 1
+            const patternOf = (lane: PulseGridLaneDoc, variation: PulseGridVariation) =>
+                lane.patterns.find(pattern => pattern.scene === scene && pattern.variation === variation)
+            const holds = (variation: PulseGridVariation) => doc.lanes.some(lane => patternOf(lane, variation) !== undefined)
+            const playing = scene === doc.scene
+            const variation = playing ? doc.variation : holds("A") ? "A" : Variations.find(holds) ?? "A"
+            return {
+                scene, name: doc.scenes.find(entry => entry.scene === scene)?.name ?? "", playing, variation,
+                thumbnail: doc.lanes.map(lane => {
+                    const pattern = patternOf(lane, variation)
+                    const length = pattern !== undefined && pattern.length !== 0 ? pattern.length : doc.settings.length
+                    const steps = new Array<boolean>(length).fill(false)
+                    pattern?.notes.forEach(note => {if (note.step <= length) {steps[note.step - 1] = true}})
+                    return {hue: lane.hue, steps}
+                })
+            }
+        })
+
+    // The scene and variation the song plays at a song position in pulses, null in a rest, outside the song, or
+    // when it has no entries.
+    export const songAt = (doc: PulseGridDoc, position: number): {scene: int, variation: PulseGridVariation} | null => {
+        const cycle = doc.settings.length * 240
+        let start = (doc.song.from - 1) * 240
+        for (const entry of doc.song.entries) {
+            const end = start + entry.cycles * cycle
+            if (position >= start && position < end) {
+                return "rest" in entry ? null : {scene: entry.scene, variation: entry.variation}
+            }
+            start = end
+        }
+        return null
+    }
 }
 
 export namespace PulseGridActions {
@@ -137,6 +182,19 @@ export namespace PulseGridActions {
 
     export const pickScene = (scene: int): Ops => [{op: "setPlaying", scene}]
     export const pickVariation = (variation: PulseGridVariation): Ops => [{op: "setPlaying", variation}]
+
+    // Scenes and the song (SPEC.md section 9)
+    export const renameScene = (scene: int, name: string): Ops => [{op: "nameScene", scene, name}]
+    // A new scene, empty or a copy of `copyOf`, and play it.
+    export const newScene = (doc: PulseGridDoc, copyOf?: int): Ops => [
+        {op: "newScene", ...(copyOf === undefined ? {} : {copyOf})},
+        {op: "setPlaying", scene: doc.sceneCount + 1}
+    ]
+    export const removeScene = (scene: int): Ops => [{op: "removeScene", scene}]
+    export const moveScene = (scene: int, to: int): Ops => [{op: "moveScene", scene, to}]
+    export const addSceneToSong = (scene: int, variation: PulseGridVariation): Ops =>
+        [{op: "addToSong", scene, variation}]
+    export const setSongMode = (on: boolean): Ops => [{op: "setSong", on}]
     // Copies what plays into the first empty variation of the scene and plays that. Nothing when all four are used.
     export const newVariation = (doc: PulseGridDoc): Ops => {
         const variation = PulseGridView.freeVariation(doc)

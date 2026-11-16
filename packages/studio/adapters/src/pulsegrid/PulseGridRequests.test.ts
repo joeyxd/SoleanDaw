@@ -117,6 +117,28 @@ describe("PulseGridRequests", () => {
         expect(!bad.ok && bad.error).toContain("line 1")
     })
 
+    it("sets the song in a request and shows its line in the next read, as one undo step", () => {
+        const f = fixture()
+        const before = f.read()
+        expect(before).not.toContain("song")
+        const answer = f.handle({ops: [
+            {op: "newScene", name: "Drop"},
+            {op: "setSong", entries: [{scene: 1, cycles: 2}, {rest: true}, {scene: 2, variation: "B", cycles: 0.5}]}
+        ]})
+        expect("results" in answer && answer.results).toEqual([
+            {ok: true, op: "newScene", lines: ["scenes 2 \"Drop\"", "playing scene 1 A"]},
+            {ok: true, op: "setSong", lines: ["song on  from 1  1A x2  rest x1  2B x0.5"]}
+        ])
+        expect(f.read().split("\n")).toContain("song on  from 1  1A x2  rest x1  2B x0.5")
+        expect(f.editing.undo()).toBe(true)
+        expect(f.read()).toEqual(before)
+        expect(f.editing.canUndo()).toBe(false)
+        const refused = f.handle({ops: [{op: "setSong", entries: [{scene: 2}]}]})
+        expect(refused).toMatchObject({ok: false, op: 1})
+        expect(!refused.ok && refused.error).toContain("scene 2")
+        expect(f.read()).toEqual(before)
+    })
+
     it.each([
         ["no kind", {}, "exactly one of read, ops or text"],
         ["two kinds", {read: true, text: "swing 60"}, "exactly one"],

@@ -321,3 +321,99 @@ length says (4 is one step); the part beyond the pattern's end is not drawn.
   note sounds once too. The sound itself never changes the project.
 - Which lanes are open, the tool and the picked notes belong to the screen, not to the document: an agent
   neither sees nor needs them.
+
+## 9. Scenes and the song
+
+### Which scenes exist
+
+A scene exists when it is scene 1, plays now, has its `used` flag, or any lane holds a pattern in it (notes or an
+own length, in any of its four variations). `sceneCount` in the document is the number of the highest scene that
+exists. The screen lists scenes 1 to `sceneCount`, so the list has no holes: a scene in between that holds
+nothing is listed too.
+
+### Scene ops
+
+| op | does |
+|---|---|
+| `newScene` | `{name?, copyOf?}`. Takes scene `sceneCount + 1` (an error when there are 16), marks it used and names it when a name is given. With `copyOf` (a scene that exists) it copies that scene's four variations in every lane: every stored note and the own length. What plays does not change |
+| `removeScene` | `{scene}`, 1 to `sceneCount`; an error when it is the only scene. Empties the scene and moves every later scene down by one: its four pattern slots in every lane, its name and its `used` flag |
+| `moveScene` | `{scene, to}`, both 1 to `sceneCount`. The scene lands at `to`; the scenes between shift by one |
+
+All three keep the same scene playing: the playing scene's number follows the scene. When the playing scene is
+the one removed, the scene that takes its number plays (the last scene when it was the last), with variation A
+when the variation that played holds nothing there. While the song runs in Pattern, a remove or a move is heard
+right from the next pattern boundary.
+
+All three keep the song playing the same scenes: the scene notes of the song are renumbered and the regions
+relabelled. `removeScene` takes the removed scene's regions out of the song. `nameScene` relabels the scene's
+regions.
+
+`setPlaying` with a scene and no variation: when the variation that plays holds nothing in that scene (no lane
+has notes or an own length there), variation A plays instead. A variation given by name is always taken.
+
+### The song: Pattern and Song
+
+The head has one switch, `song`. Off is Pattern: the scene and variation that play loop for ever. On is Song:
+a lane plays a step only when a scene note sounds on the PulseGrid's track at the start of that step, and it
+plays the pattern that note names; where no scene note sounds, every lane rests. In Song the playing scene and
+variation are only what the screen shows and edits.
+
+- A scene note is a note of pitch 0 to 63 on the PulseGrid's track: the pattern slot, `(scene - 1) * 4 +
+  variation index`. In Song these notes never reach an instrument. In Pattern they are ordinary notes.
+- The step still comes from the song position (a step is 240 pulses, counted from the start of the timeline), so
+  every lane agrees, and a scene that starts in the middle of a cycle starts in the middle of its pattern.
+- In Song a note never sounds before its own step starts: where humanize or a negative offset would put it
+  earlier, it sounds at the step's start.
+- The song track is the first Notes track of the PulseGrid's audio unit. `setSong` and `addToSong` make one when
+  the unit has none.
+- A scene region is a note region on the song track whose first note is a scene note. The song is its scene
+  regions, by position. Other regions on that track are not part of the song and no op touches them.
+- The ops write one region per entry: as long as its cycles (one cycle is the head's length in steps), looping
+  one cycle, labelled `<the scene's name, or "Scene <n>"> <variation>`, with its own notes: one scene note per
+  step of the cycle, each one step long. So in the timeline a region stretched longer repeats the scene, a
+  region cut short stops the scene at the cut, and play started in the middle of a region picks the scene up at
+  the next step. Regions are moved and copied with the DAW's own tools.
+
+| op | does |
+|---|---|
+| `setSong` | `{on?, entries?, from?}`, at least one of `on` and `entries`. `entries` (0 to 256) replace every scene region; `from` (default 1) is the song step where the first entry starts. `on` sets the switch; with entries and no `on`, the switch turns on when there is at least one entry |
+| `addToSong` | `{scene, variation?, cycles?}`. One more entry right after the end of the last scene region (at step 1 when there is none). The switch stays as it is |
+
+An entry is `{scene, variation?, cycles?}` or `{rest: true, cycles?}`: variation A and one cycle when left out.
+The scene must exist. Cycles are any number above 0, at most 4096, so `0.5` is half a cycle. A rest writes no
+region.
+
+In the document `song` is `{on, from, entries}`, read back from the regions, so what is moved or stretched by
+hand in the timeline is what an agent reads. `from` is the song step (from 1) where the first scene region
+starts, 1 when there is none. A gap between two regions reads as a rest. Where a region starts before the one
+before it ends, the earlier entry ends there. Cycles and `from` are rounded to four decimals.
+
+### The song in text
+
+    song on  from 1  1A x4  2A x4  rest x2  2B x1.5
+
+One line after the `scenes` line, written when the switch is on or the song has entries: `on` or `off`, then
+`from <step>` and one token pair per entry, `<scene><variation> x<cycles>` or `rest x<cycles>`, when there are
+entries. `parseText` reads it as one `setSong`; `song on` or `song off` alone only sets the switch.
+
+### What the scene ops answer
+
+`setSong` and `addToSong`: the `song` line. `newScene`, `removeScene` and `moveScene`: the `scenes` line, the
+`playing` line, and the `song` line when the song has entries.
+
+### What the screen adds for scenes
+
+| on the screen | action | ops |
+|---|---|---|
+| a scene in the scenes column, clicked | `pickScene` | `setPlaying` |
+| a scene double clicked, or Rename | `renameScene` | `nameScene` |
+| + New Scene (empty, or a copy of this one), Duplicate | `newScene` | `newScene`, `setPlaying` |
+| Delete | `removeScene` | `removeScene` |
+| a scene dragged up or down | `moveScene` | `moveScene` |
+| Add to song | `addSceneToSong` | `addToSong` |
+| the Pattern / Song switch | `setSongMode` | `setSong` |
+
+`PulseGridView.scenes` gives the column: for scenes 1 to `sceneCount` the name, whether it plays, and a
+thumbnail (per lane, which steps hold a note) of the variation that plays for the playing scene, else of A, else
+of the first variation that holds anything. `PulseGridView.songAt` gives the scene and variation the song plays
+at a song position, so in Song the column can mark it.

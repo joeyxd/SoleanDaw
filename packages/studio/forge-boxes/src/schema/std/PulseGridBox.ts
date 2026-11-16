@@ -19,6 +19,7 @@ export const PulseGridBox: BoxSchema<Pointers> = {
             17: {type: "int32", name: "root", value: 0, constraints: {min: 0, max: 11}, unit: ""},
             18: {type: "int32", name: "scale", value: 0, constraints: "non-negative", unit: ""},
             19: {type: "float32", name: "accent-amount", value: 0.5, ...UnipolarConstraints},
+            20: {type: "boolean", name: "song"},
             30: {
                 type: "array", name: "scenes", length: 16, element: {
                     type: "object", class: {

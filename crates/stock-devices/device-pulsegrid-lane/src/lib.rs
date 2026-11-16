@@ -6,7 +6,7 @@
 //!
 //! The data lives in boxes, not here. The shared settings sit on the `PulseGridBox` (the target of the device's
 //! `grid` pointer at `[10]`): length `[10]`, swing `[11]`, groove `[12]`, probability `[13]`, humanize `[14]`,
-//! scene `[15]`, variation `[16]`, accent-amount `[19]`. The lane's own fields sit on the device box: kind `[11]`,
+//! scene `[15]`, variation `[16]`, accent-amount `[19]`, song `[20]`. The lane's own fields sit on the device box: kind `[11]`,
 //! pitch `[12]`, probability `[13]`, humanize `[14]`, accent `[15]`, armed `[18]`, seed `[19]` (int), and the 64 pattern slots at
 //! `[30, slot, 1]` (length override, int) and `[30, slot, 2]` (notes, bytes; 8 bytes a note). All of them are
 //! plain field observations (see `device-zeitgeist`), delivered to `field_changed`; nothing here is automated.
@@ -20,6 +20,13 @@
 //! pattern cycle plays is decided once, when the first block that reaches the cycle's start is processed. To make
 //! that safe no note may land before its own cycle starts, so a humanized or offset note is held at the boundary.
 //! While the transport is stopped the pending choice is simply taken, so it applies at once on the next start.
+//!
+//! In Song mode (the head's `song` flag) the pattern cycles do not choose the slot. The notes of the audio unit's
+//! own note track below pitch 64 are SCENE NOTES: a scene note's pitch is the slot, and a step plays only while a
+//! scene note sounds at its start. Scene notes are consumed here and never reach the instrument. Each step still
+//! plays `g % pattern_steps` from the transport position, so a scene note that begins mid cycle begins mid pattern.
+//! A note never lands before its own step starts, which makes the scene note of a step always known in the block
+//! that holds the note, whatever the block size.
 //!
 //! Exports: `kind()` (midi effect), `state_size()`, `init(...)`, `field_changed(...)`, `map_parameter(...)`,
 //! `process_events(...)`.
@@ -47,7 +54,7 @@ const EIGHTH: f64 = 480.0;
 // so their paths are `[10, key]`. Lane fields are `[key]`. A pattern slot is `[30, slot, 1]` / `[30, slot, 2]`.
 // These are a contract with the `PulseGridBox` / `PulseGridLaneDeviceBox` schemas: change only with a version bump.
 const GRID_POINTER: u16 = 10;
-const HEAD_KEYS: [u16; 8] = [10, 11, 12, 13, 14, 15, 16, 19]; // length swing groove probability humanize scene variation accent-amount
+const HEAD_KEYS: [u16; 9] = [10, 11, 12, 13, 14, 15, 16, 19, 20]; // length swing groove probability humanize scene variation accent-amount song
 const LANE_KEYS: [u16; 7] = [11, 12, 13, 14, 15, 18, 19]; // kind pitch probability humanize accent armed seed
 const PATTERNS_KEY: u16 = 30;
 const PATTERN_LENGTH_KEY: u16 = 1;
@@ -71,6 +78,8 @@ const MAX_STEPS: i32 = 64;
 const MAX_RETAINED: usize = 256; // emitted notes awaiting their note-off
 const MAX_LIVE: usize = 32; // live keys passed through an armed lane and still down
 const PULL_SCRATCH: usize = 256;
+const MAX_SEGMENTS: usize = 16; // scene notes remembered in Song mode
+const SCENE_PITCHES: u32 = 64; // in Song mode a pitch below this is a scene note: the pitch is the pattern slot
 
 // Index layout of the observed-field id table: head fields, lane fields, then a length and a notes id per slot.
 const HEAD_AT: usize = 0;
@@ -103,6 +112,15 @@ struct Retained {
     complete: f64
 }
 
+/// One scene note of Song mode: it chooses `slot` for every step that starts in `[start, end)`.
+#[derive(Clone, Copy)]
+struct Segment {
+    id: u32,
+    slot: usize,
+    start: f64,
+    end: f64
+}
+
 /// The lane's per-instance state (engine-allocated, zeroed, seeded in `init`). The first block mirrors the
 /// observed head fields, the second the lane's own fields, then the 64 pattern slots (about 66 KB). The runtime
 /// block is the pattern-cycle bookkeeping (which slot the current and the previous cycle play) and the emitted
@@ -116,6 +134,7 @@ pub struct LaneState {
     scene: i32,
     variation: i32,
     accent_amount: f32,
+    song: bool,
     kind: i32,
     pitch: i32,
     lane_probability: f32,
@@ -131,6 +150,8 @@ pub struct LaneState {
     retained_count: u32,
     live: [Retained; MAX_LIVE], // passed-through live note-ons still waiting for their upstream note-off
     live_count: u32,
+    segments: [Segment; MAX_SEGMENTS], // Song mode: the scene notes that can still govern a step
+    segment_count: u32,
     next_id: u32,
     ids: [u32; FIELD_COUNT]
 }
@@ -146,6 +167,7 @@ pub fn defaults(state: &mut LaneState) {
     state.scene = 0;
     state.variation = 0;
     state.accent_amount = 0.5;
+    state.song = false;
     state.kind = 0;
     state.pitch = 60;
     state.lane_probability = 1.0;
@@ -172,6 +194,13 @@ impl LaneState {
     pub fn set_scene(&mut self, scene: i32) { self.scene = scene.clamp(0, 15); }
     pub fn set_variation(&mut self, variation: i32) { self.variation = variation.clamp(0, 3); }
     pub fn set_accent_amount(&mut self, amount: f32) { self.accent_amount = amount.clamp(0.0, 1.0); }
+    pub fn set_song(&mut self, on: bool) {
+        if on != self.song {
+            self.song = on;
+            self.segment_count = 0; // a scene heard before the switch must not govern after it
+            self.cycle = -1; // back in Pattern mode the next cycle is decided afresh
+        }
+    }
     pub fn set_kind(&mut self, kind: i32) { self.kind = kind; }
     pub fn set_pitch(&mut self, pitch: i32) { self.pitch = pitch.clamp(0, 127); }
     pub fn set_lane_probability(&mut self, probability: f32) { self.lane_probability = probability.clamp(0.0, 1.0); }
@@ -241,13 +270,14 @@ pub fn apply_field(state: &mut LaneState, id: u32, value: FieldValue) {
         5 => state.set_scene(as_int(value)),
         6 => state.set_variation(as_int(value)),
         7 => state.set_accent_amount(as_float(value)),
-        8 => state.set_kind(as_int(value)),
-        9 => state.set_pitch(as_int(value)),
-        10 => state.set_lane_probability(as_float(value)),
-        11 => state.set_lane_humanize(as_float(value)),
-        12 => state.set_accent(as_bool(value)),
-        13 => state.set_armed(as_bool(value)),
-        14 => state.set_seed(as_int(value)),
+        8 => state.set_song(as_bool(value)),
+        9 => state.set_kind(as_int(value)),
+        10 => state.set_pitch(as_int(value)),
+        11 => state.set_lane_probability(as_float(value)),
+        12 => state.set_lane_humanize(as_float(value)),
+        13 => state.set_accent(as_bool(value)),
+        14 => state.set_armed(as_bool(value)),
+        15 => state.set_seed(as_int(value)),
         _ if index < NOTES_AT => state.set_pattern_length(index - LENGTH_AT, as_int(value)),
         _ => {
             let FieldValue::Bytes(bytes) = value else { panic!("pattern notes must be bytes") };
@@ -326,15 +356,80 @@ fn slot_for_cycle(state: &mut LaneState, cycle: i64) -> usize {
     }
 }
 
+/// Song mode: read the scene notes (pitch below `SCENE_PITCHES`) of one block. A note-on opens a segment that ends
+/// with its duration (never, for a live key); its note-off closes it early. Finished segments are kept for
+/// `LOOK_BACK` so a late note of an earlier step still finds its scene. When the table is full the oldest goes.
+fn take_scenes(state: &mut LaneState, from: f64, input: &[EventRecord]) {
+    let mut kept = 0;
+    for index in 0..state.segment_count as usize {
+        if state.segments[index].end >= from - LOOK_BACK {
+            state.segments[kept] = state.segments[index];
+            kept += 1;
+        }
+    }
+    state.segment_count = kept as u32;
+    for record in input {
+        if record.pitch >= SCENE_PITCHES {
+            continue;
+        }
+        if record.kind == EVENT_NOTE_ON {
+            let end = if record.duration.is_finite() { record.position + record.duration } else { f64::INFINITY };
+            let segment = Segment {id: record.id, slot: record.pitch as usize, start: record.position, end};
+            if (state.segment_count as usize) < MAX_SEGMENTS {
+                state.segments[state.segment_count as usize] = segment;
+                state.segment_count += 1;
+            } else {
+                let mut earliest = 0;
+                for index in 1..MAX_SEGMENTS {
+                    if state.segments[index].start < state.segments[earliest].start {
+                        earliest = index;
+                    }
+                }
+                state.segments[earliest] = segment;
+            }
+        } else if record.kind == EVENT_NOTE_OFF {
+            if let Some(found) = state.segments[..state.segment_count as usize].iter_mut().find(|held| held.id == record.id) {
+                found.end = found.end.min(record.position);
+            }
+        }
+    }
+}
+
+/// The slot of the scene note sounding at the start of absolute step `g`: the one that started last when several
+/// sound; `None` when none does.
+fn scene_slot(state: &LaneState, g: i64) -> Option<usize> {
+    let at = g as f64 * STEP;
+    let mut governing: Option<&Segment> = None;
+    for segment in &state.segments[..state.segment_count as usize] {
+        if segment.start <= at && at < segment.end {
+            // Equal starts are not a case the rule decides; the higher id wins so the answer never depends on the
+            // order the table was filled in.
+            let wins = governing.map_or(true, |best| segment.start > best.start || (segment.start == best.start && segment.id > best.id));
+            if wins {
+                governing = Some(segment);
+            }
+        }
+    }
+    governing.map(|segment| segment.slot)
+}
+
 /// Play the notes of absolute step `g` that land in `[from, to)`.
 fn play_step(state: &mut LaneState, g: i64, from: f64, to: f64, out: &mut [EventRecord], count: &mut usize) {
     let cycle_steps = state.length as i64;
     let cycle = g / cycle_steps;
     let cycle_start = (cycle * cycle_steps) as f64 * STEP;
-    if cycle_start >= to {
-        return; // not reached yet; nothing of this cycle can land before its start
-    }
-    let slot = slot_for_cycle(state, cycle);
+    let slot = if state.song {
+        if g as f64 * STEP >= to {
+            return; // a song note never lands before its step starts, so this step cannot land yet
+        }
+        let Some(slot) = scene_slot(state, g) else { return }; // no scene note sounds at the step: it rests
+        slot
+    } else {
+        if cycle_start >= to {
+            return; // not reached yet; nothing of this cycle can land before its start
+        }
+        slot_for_cycle(state, cycle)
+    };
     let pattern_steps = if state.patterns[slot].length > 0 { state.patterns[slot].length as i64 } else { cycle_steps };
     let pattern_step = g % pattern_steps;
     let lane_seed = LANE_SEED ^ state.seed as u32;
@@ -361,8 +456,11 @@ fn play_step(state: &mut LaneState, g: i64, from: f64, to: f64, out: &mut [Event
         let offset = (record[NOTE_OFFSET] as i8) as f64 / 100.0 * STEP;
         let jitter = (time_roll * 2.0 - 1.0) * humanize * HUMANIZE_PULSES;
         let mut position = g as f64 * STEP + swing_delay + offset + jitter;
-        if position < cycle_start {
-            position = cycle_start;
+        // Pattern mode holds a note at its cycle start (the slot is decided there); Song mode at its own step
+        // start (the scene note of the step is known by then).
+        let floor = if state.song { g as f64 * STEP } else { cycle_start };
+        if position < floor {
+            position = floor;
         }
         if !(position >= from && position < to) || (state.retained_count as usize) >= MAX_RETAINED {
             continue;
@@ -402,8 +500,12 @@ pub fn process(state: &mut LaneState, from: f64, to: f64, flags: u32, input: &[E
     if flags & abi::BlockFlags::DISCONTINUOUS != 0 || !transporting {
         release_held(&mut state.retained, &mut state.retained_count, from, out, &mut count);
         state.cycle = -1; // the next block that plays decides its slot from the scene as it is then
+        state.segment_count = 0; // Song mode: the scene is forgotten until the next scene note
     }
     if transporting {
+        if state.song {
+            take_scenes(state, from, input); // before the steps are played: a step needs its scene note
+        }
         let first = ((from - LOOK_BACK).max(0.0) / STEP) as i64;
         let last = ((to + LOOK_AHEAD) / STEP) as i64;
         for g in first..=last {
@@ -416,7 +518,22 @@ pub fn process(state: &mut LaneState, from: f64, to: f64, flags: u32, input: &[E
         // A stop or a jump does not end them: the key is still held, and its note-off comes from upstream.
         release_held(&mut state.live, &mut state.live_count, from, out, &mut count);
     } else {
+        if state.song {
+            // A key passed through before Song mode went on would lose its note-off now (scene notes are dropped).
+            let mut kept = 0;
+            for index in 0..state.live_count as usize {
+                let note = state.live[index];
+                if note.pitch >= SCENE_PITCHES || !emit(out, &mut count, note_off(note.id, note.pitch, from)) {
+                    state.live[kept] = note;
+                    kept += 1;
+                }
+            }
+            state.live_count = kept as u32;
+        }
         for record in input {
+            if state.song && record.pitch < SCENE_PITCHES {
+                continue; // a scene note: never forwarded to the instrument
+            }
             if record.kind == EVENT_NOTE_ON {
                 if (state.live_count as usize) < MAX_LIVE && emit(out, &mut count, *record) {
                     state.live[state.live_count as usize] = Retained {id: record.id, pitch: record.pitch, complete: 0.0};

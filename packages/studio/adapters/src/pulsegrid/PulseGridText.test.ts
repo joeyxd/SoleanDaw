@@ -126,7 +126,7 @@ describe("PulseGridText whole document", () => {
         const doc: PulseGridDoc = {
             version: 1, id: "head", name: "Minor",
             settings: {length: 16, swing: 50, groove: 0, probability: 100, humanize: 0, accentAmount: 50, root: 0, scale: 1},
-            scene: 1, variation: "A", scenes: [], lanes: []
+            scene: 1, variation: "A", scenes: [], sceneCount: 1, song: {on: false, from: 1, entries: []}, lanes: []
         }
         expect(PulseGridText.toText(doc).split("\n")[1]).toContain("key C  scale natural-minor")
     })
@@ -138,6 +138,7 @@ describe("PulseGridText whole document", () => {
             settings: {length: 16, swing: 54, groove: 20, probability: 100, humanize: 0, accentAmount: 50, root: 0, scale: 0},
             scene: 1, variation,
             scenes: [{scene: 1, name: "Intro", used: true}, {scene: 2, name: "Drop", used: true}],
+            sceneCount: 2, song: {on: false, from: 1, entries: []},
             lanes: [
                 makeLane(1, "kick", "drum", 36, [{scene: 1, variation: "A", length: 0, notes: [1, 5, 9, 13].map(step => note(step, 36))}]),
                 makeLane(2, "hat", "drum", 42, [{scene: 1, variation: "B", length: 0, notes: [note(1, 42), note(3, 42)]}]),
@@ -199,5 +200,40 @@ describe("PulseGridText whole document", () => {
         const line = PulseGridText.formatLine({name: "1", kind: "melodic", pitch: 60}, {length: 0, notes: [note(1, 60)]}, 16)
         expect(line).toBe("\"1\": 1:C3")
         expect(PulseGridText.parseLine(line, {pitch: 60, effectiveLength: 16}).name).toBe("1")
+    })
+})
+
+describe("PulseGridText song line", () => {
+    const doc = (song: PulseGridDoc["song"]): PulseGridDoc => ({
+        version: 1, id: "head", name: "Song",
+        settings: {length: 16, swing: 50, groove: 0, probability: 100, humanize: 0, accentAmount: 50, root: 0, scale: 0},
+        scene: 1, variation: "A", scenes: [], sceneCount: 2, song, lanes: []
+    })
+    const entries: PulseGridDoc["song"]["entries"] = [
+        {scene: 1, variation: "A", cycles: 4}, {scene: 2, variation: "A", cycles: 4}, {rest: true, cycles: 2},
+        {scene: 2, variation: "B", cycles: 1.5}]
+
+    it("formats the switch, from and one pair per entry", () => {
+        expect(PulseGridText.formatSong(doc({on: true, from: 1, entries})))
+            .toBe("song on  from 1  1A x4  2A x4  rest x2  2B x1.5")
+        expect(PulseGridText.formatSong(doc({on: false, from: 2.5, entries: entries.slice(0, 1)}))).toBe("song off  from 2.5  1A x4")
+        expect(PulseGridText.formatSong(doc({on: false, from: 1, entries: []}))).toBe("song off")
+    })
+
+    it("writes the line after scenes, only when the switch is on or the song has entries", () => {
+        expect(PulseGridText.toText(doc({on: false, from: 1, entries: []}))).not.toContain("song")
+        expect(PulseGridText.toText(doc({on: true, from: 1, entries: []})).split("\n")[3]).toBe("song on")
+        expect(PulseGridText.toText(doc({on: false, from: 1, entries})).split("\n")[3])
+            .toBe("song off  from 1  1A x4  2A x4  rest x2  2B x1.5")
+    })
+
+    it("reads the written line back to one setSong, whatever the spacing", () => {
+        const written = PulseGridText.toText(doc({on: true, from: 3, entries}))
+        const expected = {op: "setSong", on: true, from: 3, entries}
+        expect(PulseGridText.parseText(written).ops.at(-1)).toEqual(expected)
+        expect(PulseGridText.parseText("song on from 3 1A x4 2A x4 rest x2 2B x1.5").ops).toEqual([expected])
+        const empty = PulseGridText.parseText("song off  from 1")
+        expect(empty.ops).toEqual([])
+        expect(empty.errors[0]).toMatch(/line 1: from 1 with no entries is not allowed/)
     })
 })

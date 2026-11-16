@@ -2,7 +2,8 @@ import {int} from "@opendaw/lib-std"
 import {MidiKeys} from "@opendaw/lib-dsp"
 import {PulseGridScales} from "./PulseGridScales"
 import {
-    PulseGridDoc, PulseGridError, PulseGridLaneDoc, PulseGridNote, PulseGridOp, PulseGridVariation
+    PulseGridDoc, PulseGridError, PulseGridLaneDoc, PulseGridNote, PulseGridOp, PulseGridSongEntryInput,
+    PulseGridVariation
 } from "./PulseGridTypes"
 
 export type PulseGridLineLane = {name: string, kind: "drum" | "melodic", pitch: int}
@@ -43,6 +44,38 @@ const parseInteger = (text: string, label: string, min: number, max: number, pat
     const value = Number(text)
     if (value < min || value > max) error(`${label} ${text} is not allowed; expected ${min}..${max}`)
     return value
+}
+
+const songGrammar = /^song\s+(?:on|off)(?:\s+from\s+\d+(?:\.\d+)?)?(?:\s+(?:\d+[A-D]|rest)\s+x\d+(?:\.\d+)?)*$/
+
+// `song on  from 1  1A x4  rest x2`; with no `from` and no entries it only sets the switch.
+const parseSong = (line: string, on: boolean): PulseGridOp => {
+    const tokens = line.split(/\s+/).slice(2)
+    let from: number | undefined
+    if (tokens[0] === "from") {
+        if (!/^\d+(?:\.\d+)?$/.test(tokens[1] ?? "")) error(`from ${tokens[1] ?? ""} is not allowed; expected a song step such as from 1`)
+        from = Number(tokens[1])
+        tokens.splice(0, 2)
+    }
+    if (tokens.length % 2 !== 0) {
+        error(`song entries ${tokens.join(" ")} are not allowed; expected pairs such as 1A x4 or rest x2`)
+    }
+    const entries: Array<PulseGridSongEntryInput> = []
+    for (let at = 0; at < tokens.length; at += 2) {
+        const who = tokens[at], times = /^x(\d+(?:\.\d+)?)$/.exec(tokens[at + 1])
+        if (!times) error(`cycles ${tokens[at + 1]} are not allowed; expected x<cycles> such as x4 or x1.5`)
+        const cycles = Number(times![1])
+        const scene = /^(\d+)([A-D])$/.exec(who)
+        if (who === "rest") entries.push({rest: true, cycles})
+        else if (scene) {
+            entries.push({scene: parseInteger(scene[1], "scene", 1, 16), variation: scene[2] as PulseGridVariation, cycles})
+        } else error(`song entry ${who} is not allowed; expected a scene and variation such as 1A, or rest`)
+    }
+    // `from` with no entries would empty the song, and toText never writes that: refuse it, do not guess.
+    if (from !== undefined && entries.length === 0) {
+        error(`from ${from} with no entries is not allowed; write the entries after it, or song on / song off alone`)
+    }
+    return {op: "setSong", on, ...(entries.length > 0 ? {entries, from} : {})}
 }
 
 const noteSort = (notes: ReadonlyArray<PulseGridNote>): Array<PulseGridNote> =>
@@ -241,6 +274,16 @@ export namespace PulseGridText {
     export const formatScenes = (doc: PulseGridDoc): string =>
         doc.scenes.length === 0 ? "" : `scenes ${doc.scenes.map(scene => `${scene.scene} ${quoted(scene.name)}`).join("  ")}`
 
+    // `song on  from 1  1A x4  rest x2`: the switch, then where it starts and its entries when it has any.
+    export const formatSong = ({song}: PulseGridDoc): string => {
+        const parts = [`song ${song.on ? "on" : "off"}`]
+        if (song.entries.length > 0) {
+            parts.push(`from ${song.from}`, ...song.entries.map(entry =>
+                `${"rest" in entry ? "rest" : `${entry.scene}${entry.variation}`} x${entry.cycles}`))
+        }
+        return parts.join("  ")
+    }
+
     export const formatLane = (lane: PulseGridLaneDoc): string => {
         const sound = lane.sound
         const sample = sound?.sample && sound.sample.name !== sound.label ? ` ${quoted(sound.sample.name)}` : ""
@@ -262,6 +305,7 @@ export namespace PulseGridText {
         const lines = [`PulseGrid ${quoted(doc.name)}`, formatSettings(doc), formatPlaying(doc)]
         const scenes = formatScenes(doc)
         if (scenes) lines.push(scenes)
+        if (doc.song.on || doc.song.entries.length > 0) lines.push(formatSong(doc))
         lines.push("lanes", ...doc.lanes.map(lane => `  ${formatLane(lane)}`))
         const slotKeys = new Set<string>([`${doc.scene}:${doc.variation}`])
         doc.lanes.forEach(lane => lane.patterns.forEach(pattern => slotKeys.add(`${pattern.scene}:${pattern.variation}`)))
@@ -288,6 +332,8 @@ export namespace PulseGridText {
         const errors: Array<string> = []
         let inLanes = false
         let slot: {scene: int, variation: PulseGridVariation} | null = null
+        // The song is set last: its scenes must exist, and the lines that make them exist may come after it.
+        let songOp: PulseGridOp | null = null
         const lines = text.split(/\r?\n/)
         lines.forEach((raw, index) => {
             const lineNumber = index + 1
@@ -366,6 +412,13 @@ export namespace PulseGridText {
                     ops.push(...found)
                     return
                 }
+                // Under a scene heading a lane may be called "song on": only a line that is wholly the song
+                // grammar is the song line there.
+                const songLine = /^song\s+(on|off)(?:\s|$)/.exec(line)
+                if (songLine && (!slot || songGrammar.test(line))) {
+                    songOp = parseSong(line, songLine[1] === "on")
+                    return
+                }
                 if (slot) {
                     const patternText = raw.trim()
                     if (!patternText.includes("|") && !patternText.includes(":")) error(`unknown line ${line}`)
@@ -383,6 +436,7 @@ export namespace PulseGridText {
                 report(cause instanceof Error ? cause.message : String(cause))
             }
         })
+        if (songOp !== null) ops.push(songOp)
         return {ops, errors}
     }
 }

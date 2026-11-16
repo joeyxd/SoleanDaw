@@ -346,6 +346,172 @@ fn a_disarm_releases_live_keys_still_down() {
     assert!(pull(&mut state, 1920.0, 2880.0, 0, &[]).is_empty(), "released once");
 }
 
+fn scene_event(kind: u32, id: u32, slot: u32, position: f64, duration: f64) -> EventRecord {
+    EventRecord {position, offset: 0, kind, id, pitch: slot, velocity: 0.8, cent: 0.0, duration}
+}
+
+/// A scene note as the unit's note source sends it: a note-on with its duration and the note-off at its end.
+fn scene(id: u32, slot: u32, start: f64, duration: f64) -> [EventRecord; 2] {
+    [scene_event(EVENT_NOTE_ON, id, slot, start, duration), scene_event(EVENT_NOTE_OFF, id, slot, start + duration, 0.0)]
+}
+
+/// A pattern of sixteen one-step notes whose pitch says which step played: `base + step`.
+fn ramp(base: u8) -> Vec<u8> {
+    pattern(&(0..16u8).map(|step| note(step, 4, base + step, 100, 100, 0)).collect::<Vec<_>>())
+}
+
+fn song_lane() -> Box<LaneState> {
+    let mut state = lane();
+    state.set_song(true);
+    state.set_kind(1);
+    state.set_pattern_notes(1, &ramp(40));
+    state.set_pattern_notes(2, &ramp(60));
+    state
+}
+
+/// Like `render`, but every upstream event goes to the block its position falls in.
+fn render_song(state: &mut LaneState, input: &[EventRecord], total: f64, block: f64) -> Vec<Ev> {
+    let mut all = Vec::new();
+    let mut from = 0.0;
+    while from < total {
+        let to = (from + block).min(total);
+        let here: Vec<EventRecord> = input.iter().filter(|event| event.position >= from && event.position < to).copied().collect();
+        all.extend(evs(&pull(state, from, to, PLAY, &here)));
+        from = to;
+    }
+    all
+}
+
+#[test]
+fn song_off_leaves_scene_notes_alone() {
+    let mut state = lane();
+    state.set_armed(true);
+    state.set_pattern_notes(0, &on_steps(&[0, 4, 8, 12]));
+    let input = [scene_event(EVENT_NOTE_ON, 7, 10, 100.0, 100.0), scene_event(EVENT_NOTE_OFF, 7, 10, 200.0, 0.0)];
+    let events = evs(&pull(&mut state, 0.0, BAR, PLAY, &input));
+    assert_eq!(positions(&ons(&events)), vec![0.0, 100.0, 960.0, 1920.0, 2880.0], "the pitch-10 note passes, the pattern plays");
+    assert_eq!(ons(&events).iter().filter(|event| event.2 == 10).count(), 1);
+    assert_eq!(offs(&events).iter().filter(|event| event.2 == 10).count(), 1);
+}
+
+#[test]
+fn song_on_with_no_scene_note_rests() {
+    let mut state = song_lane();
+    assert!(render_song(&mut state, &[], 2.0 * BAR, BAR).is_empty());
+}
+
+#[test]
+fn a_scene_note_chooses_the_slot_from_its_start_to_its_end() {
+    let mut state = song_lane();
+    // Slot 2 from step 6 (1440) for four steps: it starts mid cycle, so it starts mid pattern.
+    let input = scene(1, 2, 1440.0, 960.0);
+    let events = render_song(&mut state, &input, BAR, BAR);
+    assert_eq!(pitches_at(&events), vec![(1440.0, 66), (1680.0, 67), (1920.0, 68), (2160.0, 69)]);
+    // The same notes from a second bar: the step index follows the transport.
+    let mut again = song_lane();
+    let later = scene(1, 2, BAR + 1440.0, 960.0);
+    assert_eq!(pitches_at(&render_song(&mut again, &later, 2.0 * BAR, 700.0)),
+        vec![(BAR + 1440.0, 66), (BAR + 1680.0, 67), (BAR + 1920.0, 68), (BAR + 2160.0, 69)]);
+}
+
+#[test]
+fn two_scene_notes_back_to_back_switch_exactly_at_the_boundary() {
+    let mut state = song_lane();
+    let input = [scene(1, 1, 0.0, 960.0), scene(2, 2, 960.0, 960.0)].concat();
+    let mut sorted = input.clone();
+    sorted.sort_by(|left, right| left.position.partial_cmp(&right.position).unwrap());
+    let events = render_song(&mut state, &sorted, BAR, BAR);
+    assert_eq!(pitches_at(&events), vec![
+        (0.0, 40), (240.0, 41), (480.0, 42), (720.0, 43), (960.0, 64), (1200.0, 65), (1440.0, 66), (1680.0, 67)
+    ]);
+}
+
+#[test]
+fn a_scene_note_per_step_plays_the_whole_pattern_without_gap_or_double() {
+    let mut state = song_lane();
+    let input: Vec<EventRecord> = (0..16u32).flat_map(|step| scene(step + 1, 1, step as f64 * 240.0, 240.0)).collect();
+    let events = render_song(&mut state, &input, BAR, 500.0);
+    let expected: Vec<(f64, u32)> = (0..16u32).map(|step| (step as f64 * 240.0, 40 + step)).collect();
+    assert_eq!(pitches_at(&events), expected);
+}
+
+#[test]
+fn a_song_note_never_lands_before_its_step_starts() {
+    let mut state = song_lane();
+    state.set_humanize(1.0);
+    state.set_swing(60.0);
+    // Every note asks to play 100 hundredths of a step early; humanize jitters it on top.
+    state.set_pattern_notes(1, &pattern(&(0..16u8).map(|step| [step, (-100i8) as u8, 4, 40 + step, 100, 100, 0, 0]).collect::<Vec<_>>()));
+    let input: Vec<EventRecord> = (0..32u32).flat_map(|step| scene(step + 1, 1, step as f64 * 240.0, 240.0)).collect();
+    let events = render_song(&mut state, &input, 2.0 * BAR, 333.0);
+    let hits = ons(&events);
+    assert_eq!(hits.len(), 32, "every step plays");
+    for hit in &hits {
+        let step = (hit.2 - 40) as f64;
+        let bar_step = step + if hit.0 >= BAR { 16.0 } else { 0.0 };
+        assert!(hit.0 >= bar_step * 240.0, "pitch {} landed at {} before its step", hit.2, hit.0);
+    }
+    assert!(hits.iter().any(|hit| hit.0 == (hit.2 - 40) as f64 * 240.0 + if hit.0 >= BAR { BAR } else { 0.0 }), "some are held at the step start");
+}
+
+#[test]
+fn block_splitting_never_changes_the_notes_in_song_mode() {
+    let make = || {
+        let mut state = song_lane();
+        state.set_swing(58.0);
+        state.set_humanize(0.5);
+        state.set_lane_humanize(0.2);
+        state.set_probability(0.9);
+        state.set_groove(0.5);
+        state.set_pattern_length(2, 12);
+        state
+    };
+    let mut input = [
+        scene(1, 1, 0.0, 700.0), scene(2, 2, 700.0, 1500.0), scene(3, 1, 2500.0, 240.0), scene(4, 2, 2800.0, 960.0),
+        scene(5, 1, BAR + 100.0, 3000.0), scene(6, 2, BAR + 3300.0, 900.0)
+    ].concat();
+    input.sort_by(|left, right| left.position.partial_cmp(&right.position).unwrap());
+    let total = 2.0 * BAR;
+    let whole = render_song(&mut make(), &input, total, total);
+    assert!(ons(&whole).len() > 12, "the scene plays");
+    for pair in whole.windows(2) {
+        assert!(pair[0].0 <= pair[1].0, "positions never go back");
+    }
+    for block in [1.0, 7.0, 13.7, 100.0, 240.0, 500.5, 960.0, 1111.0, BAR] {
+        assert_eq!(render_song(&mut make(), &input, total, block), whole, "blocks of {block} differ from one call");
+    }
+}
+
+#[test]
+fn in_song_mode_a_scene_note_is_never_forwarded_but_a_high_note_passes() {
+    let mut state = song_lane();
+    state.set_armed(true);
+    let input = [
+        scene_event(EVENT_NOTE_ON, 7, 10, 100.0, 0.0), scene_event(EVENT_NOTE_ON, 8, 70, 150.0, 0.0),
+        scene_event(EVENT_NOTE_OFF, 7, 10, 300.0, 0.0), scene_event(EVENT_NOTE_OFF, 8, 70, 350.0, 0.0)
+    ];
+    let events = evs(&pull(&mut state, 0.0, 960.0, PLAY, &input));
+    let passed: Vec<(f64, u32, u32)> = events.iter().map(|event| (event.0, event.1, event.2)).collect();
+    assert_eq!(passed, vec![(150.0, EVENT_NOTE_ON, 70), (350.0, EVENT_NOTE_OFF, 70)]);
+    let mut unarmed = song_lane();
+    assert!(evs(&pull(&mut unarmed, 0.0, 960.0, PLAY, &input)).iter().all(|event| event.2 != 10 && event.2 != 70));
+}
+
+#[test]
+fn a_discontinuous_block_forgets_the_scene_until_the_next_scene_note() {
+    let mut state = song_lane();
+    // A key-like scene note: it never ends by itself.
+    let held = scene_event(EVENT_NOTE_ON, 1, 1, 0.0, f64::INFINITY);
+    assert_eq!(ons(&evs(&pull(&mut state, 0.0, 960.0, PLAY, &[held]))).len(), 4);
+    assert_eq!(ons(&evs(&pull(&mut state, 960.0, 1920.0, PLAY, &[]))).len(), 4, "it keeps governing");
+    let jumped = evs(&pull(&mut state, 1920.0, 2880.0, PLAY | BlockFlags::DISCONTINUOUS, &[]));
+    assert!(ons(&jumped).is_empty(), "the jump forgot it");
+    assert!(ons(&evs(&pull(&mut state, 2880.0, 3840.0, PLAY, &[]))).is_empty(), "and it stays forgotten");
+    let next = scene_event(EVENT_NOTE_ON, 2, 2, 4080.0, 480.0);
+    let after = evs(&pull(&mut state, 3840.0, 4800.0, PLAY, &[next]));
+    assert_eq!(pitches_at(&after), vec![(4080.0, 61), (4320.0, 62)], "steps 17 and 18 play pattern steps 1 and 2 of slot 2");
+}
+
 #[test]
 fn a_full_out_buffer_never_loses_a_note_off() {
     let mut state = lane();

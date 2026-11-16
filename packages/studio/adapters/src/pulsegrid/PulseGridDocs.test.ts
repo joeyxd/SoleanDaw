@@ -88,6 +88,7 @@ describe("PulseGridDocs", () => {
                 accentAmount: 65, root: 7, scale: 2},
             scene: 2, variation: "B",
             scenes: [{scene: 2, name: "Drop", used: false}, {scene: 4, name: "", used: true}],
+            sceneCount: 4, song: {on: false, from: 1, entries: []},
             lanes: [
                 {index: 1, id: UUID.toString(lane.address.uuid), name: "Kick", kind: "melodic", group: 1,
                     hue: 120, pitch: 36, probability: 80, humanize: 12.35, accent: false, armed: true,

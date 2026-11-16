@@ -1,0 +1,148 @@
+component
+  display: flex
+  flex-direction: column
+  flex: 0 0 172px
+  width: 172px
+  min-height: 0
+  box-sizing: border-box
+  border: 1px solid var(--pg-line, #262a52)
+  border-radius: var(--pg-radius, 10px)
+  background: var(--pg-panel, #0b0e23)
+  color: var(--pg-fg, #efeaff)
+  font-size: 12px
+
+  > .heading
+    flex: 0 0 auto
+    padding: 10px 12px 8px
+    color: var(--pg-muted, #a7a3c9)
+    font-size: 11px
+    letter-spacing: 0.12em
+
+  > .list
+    position: relative
+    flex: 1
+    min-height: 0
+    display: flex
+    flex-direction: column
+    gap: 6px
+    padding: 0 8px 8px
+    overflow-y: auto
+    scrollbar-width: thin
+    scrollbar-color: var(--pg-line, #262a52) transparent
+
+    > .drop
+      display: none
+      position: absolute
+      left: 8px
+      right: 8px
+      height: 3px
+      border-radius: 2px
+      background: var(--pg-violet-ink, #cfa8ff)
+      box-shadow: 0 0 8px var(--pg-violet, #a22ada)
+      pointer-events: none
+
+    > .row
+      flex: 0 0 auto
+      display: flex
+      flex-direction: column
+      gap: 6px
+      padding: 7px 8px
+      border-radius: 8px
+      background: var(--pg-panel-2, #12163a)
+      box-shadow: inset 0 0 0 1px var(--pg-line, #262a52)
+      cursor: pointer
+      user-select: none
+      touch-action: none
+
+      &:hover
+        box-shadow: inset 0 0 0 1px var(--pg-violet-ink, #cfa8ff)
+
+      &:focus-visible
+        outline: 1px solid var(--pg-violet-ink, #cfa8ff)
+        outline-offset: 2px
+
+      &.lifting
+        opacity: 0.55
+
+      &.playing
+        background: var(--pg-violet, #a22ada)
+        box-shadow: 0 0 12px #a22ada80
+
+        .num
+          color: var(--pg-fg, #efeaff)
+
+      &.in-song .mark
+        display: inline
+
+      > .top
+        display: flex
+        align-items: center
+        gap: 6px
+        min-width: 0
+
+        > .num
+          flex: 0 0 auto
+          min-width: 14px
+          color: var(--pg-muted, #a7a3c9)
+          font-variant-numeric: tabular-nums
+
+        > .name
+          flex: 1
+          min-width: 0
+          overflow: hidden
+          text-overflow: ellipsis
+          white-space: nowrap
+
+          > .rename
+            width: 100%
+            box-sizing: border-box
+            padding: 2px 4px
+            border: 1px solid var(--pg-violet-ink, #cfa8ff)
+            border-radius: 4px
+            background: var(--pg-ground, #050517)
+            color: var(--pg-fg, #efeaff)
+            font: inherit
+            outline: none
+
+        > .mark
+          display: none
+          flex: 0 0 auto
+          color: var(--pg-violet-ink, #cfa8ff)
+          font-size: 9px
+
+      > .thumb
+        display: flex
+        flex-direction: column
+        gap: 1px
+
+        > .line
+          display: grid
+          gap: 1px
+          height: 3px
+          border-radius: 1px
+          background: var(--pg-line, #262a52)
+          overflow: hidden
+
+          > span
+            height: 3px
+            background: currentColor
+
+    > .new
+      flex: 0 0 auto
+
+      > button
+        width: 100%
+        height: 30px
+        padding: 0 10px
+        border-radius: 8px
+        color: var(--pg-fg, #efeaff)
+        background: transparent
+        box-shadow: inset 0 0 0 1px var(--pg-line, #262a52)
+        font-size: 12px
+
+        &:hover
+          box-shadow: inset 0 0 0 1px var(--pg-violet, #a22ada)
+
+        &:focus-visible
+          outline: 1px solid var(--pg-violet-ink, #cfa8ff)
+          outline-offset: 2px

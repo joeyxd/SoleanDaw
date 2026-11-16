@@ -36,6 +36,33 @@ component
     font-size: 11px
     white-space: nowrap
 
+  > .scenes
+    display: flex
+    flex-wrap: wrap
+    gap: 4px
+    flex: 0 0 auto
+
+    > .scene
+      --color: #efeaff
+      --color-active: #efeaff
+      min-width: 22px
+      border-radius: 6px
+      background: #12163a
+      box-shadow: inset 0 0 0 1px #262a52
+      font-size: 11px
+
+      > label
+        min-height: 22px
+        padding: 0 6px
+        cursor: pointer !important
+
+      &:hover
+        box-shadow: inset 0 0 0 1px #cfa8ff
+
+      &.active
+        background: #a22ada
+        box-shadow: 0 0 8px #a22ada80
+
   > .mini
     --color: #efeaff
     --color-active: #efeaff

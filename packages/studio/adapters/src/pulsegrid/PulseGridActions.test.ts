@@ -46,7 +46,11 @@ const cowbell = {uuid: "83cfb3ec-f361-42dc-af1d-766f2bb0100d", name: "TR-707 Cow
 
 // Every action of the screen, the ops it must send, and one real call. A new action does not compile until it
 // is listed here.
-type Case = {ops: ReadonlyArray<PulseGridOpName>, call: (doc: PulseGridDoc, lane: string) => Array<PulseGridOp>}
+// `setup` is applied first, for an action that needs more than a new PulseGrid (two scenes to remove one).
+type Case = {
+    ops: ReadonlyArray<PulseGridOpName>, call: (doc: PulseGridDoc, lane: string) => Array<PulseGridOp>,
+    setup?: ReadonlyArray<PulseGridOp>
+}
 const cases: Record<keyof typeof PulseGridActions, Case> = {
     rename: {ops: ["setSetting"], call: () => PulseGridActions.rename("Night drive")},
     setLength: {ops: ["setSetting"], call: () => PulseGridActions.setLength(32)},
@@ -67,6 +71,12 @@ const cases: Record<keyof typeof PulseGridActions, Case> = {
     pickScene: {ops: ["setPlaying"], call: () => PulseGridActions.pickScene(3)},
     pickVariation: {ops: ["setPlaying"], call: () => PulseGridActions.pickVariation("C")},
     newVariation: {ops: ["copyVariation", "setPlaying"], call: doc => PulseGridActions.newVariation(doc)},
+    renameScene: {ops: ["nameScene"], call: () => PulseGridActions.renameScene(1, "Intro")},
+    newScene: {ops: ["newScene", "setPlaying"], call: doc => PulseGridActions.newScene(doc, 1)},
+    removeScene: {ops: ["removeScene"], setup: [{op: "newScene"}], call: () => PulseGridActions.removeScene(2)},
+    moveScene: {ops: ["moveScene"], setup: [{op: "newScene"}], call: () => PulseGridActions.moveScene(1, 2)},
+    addSceneToSong: {ops: ["addToSong"], call: () => PulseGridActions.addSceneToSong(1, "B")},
+    setSongMode: {ops: ["setSong"], call: () => PulseGridActions.setSongMode(true)},
     setStep: {ops: ["setStep"], call: (_, lane) => PulseGridActions.setStep(lane, 5, true)},
     setStepValues: {ops: ["setStep"], call: (_, lane) => PulseGridActions.setStepValues(lane, 1, {velocity: 60, accent: true})},
     setMute: {ops: ["setLaneMix"], call: (_, lane) => PulseGridActions.setMute(lane, true)},
@@ -88,8 +98,9 @@ describe("PulseGridActions", () => {
         expect(Object.keys(cases).sort()).toEqual(Object.keys(PulseGridActions).sort())
     })
 
-    it.each(Object.entries(cases))("%s sends only its ops and they all apply", (_name, {ops, call}) => {
+    it.each(Object.entries(cases))("%s sends only its ops and they all apply", (_name, {ops, call, setup}) => {
         const f = fixture()
+        if (setup !== undefined) {f.ok(setup)}
         const sent = call(f.read(), f.lane("Kick").id)
         expect(sent.length).toBeGreaterThan(0)
         expect(Array.from(new Set(sent.map(op => op.op))).sort()).toEqual(Array.from(new Set(ops)).sort())
@@ -335,5 +346,95 @@ describe("PulseGridKits", () => {
     it.each(PulseGridKits.Beats.map(beat => [beat.name, beat] as const))("loads the beat %s", (_name, beat) => {
         const f = fixture()
         f.ok(PulseGridActions.loadBeat(f.read(), beat))
+    })
+
+    describe("scenes and the song", () => {
+        it("lists scenes 1 to sceneCount with name, playing and a thumbnail per lane over the effective length", () => {
+            const f = fixture()
+            const kick = f.lane("Kick").id, hat = f.lane("Hat").id
+            f.ok(PulseGridActions.setStep(kick, 1, true))
+            f.ok(PulseGridActions.setStep(kick, 5, true))
+            f.ok(PulseGridActions.renameScene(1, "Intro"))
+            f.ok([...PulseGridActions.newScene(f.read(), 1), {op: "setPattern", lane: hat, notes: [{step: 3}], length: 8}])
+            const doc = f.read()
+            expect(doc.scene).toBe(2)
+            const scenes = PulseGridView.scenes(doc)
+            expect(scenes.map(({scene, name, playing, variation}) => ({scene, name, playing, variation})))
+                .toEqual([{scene: 1, name: "Intro", playing: false, variation: "A"},
+                    {scene: 2, name: "", playing: true, variation: "A"}])
+            expect(scenes[0].thumbnail.length).toBe(doc.lanes.length)
+            expect(scenes[0].thumbnail[0]).toEqual({hue: doc.lanes[0].hue,
+                steps: Array.from({length: 16}, (_, index) => index === 0 || index === 4)})
+            expect(scenes[1].thumbnail[0].steps).toEqual(scenes[0].thumbnail[0].steps)
+            expect(scenes[1].thumbnail[doc.lanes.findIndex(lane => lane.name === "Hat")].steps)
+                .toEqual(Array.from({length: 8}, (_, index) => index === 2))
+            expect(scenes[1].thumbnail[2].steps.length).toBe(16)
+        })
+
+        it("shows A for a scene that does not play, else the first variation that holds anything", () => {
+            const f = fixture()
+            const kick = f.lane("Kick").id
+            f.ok([{op: "setStep", lane: kick, step: 1, scene: 2, variation: "C"},
+                {op: "setStep", lane: kick, step: 2, scene: 3, variation: "A"},
+                {op: "setStep", lane: kick, step: 3, scene: 3, variation: "B"}])
+            const scenes = PulseGridView.scenes(f.read())
+            expect(scenes.map(scene => scene.variation)).toEqual(["A", "C", "A"])
+            expect(scenes[1].thumbnail[0].steps.indexOf(true)).toBe(0)
+            expect(scenes[2].thumbnail[0].steps.indexOf(true)).toBe(1)
+            f.ok(PulseGridActions.pickScene(3))
+            f.ok(PulseGridActions.pickVariation("B"))
+            expect(PulseGridView.scenes(f.read())[2]).toMatchObject({playing: true, variation: "B"})
+        })
+
+        it("gives a new scene its number, copies one when asked, and plays it", () => {
+            const f = fixture()
+            f.ok(PulseGridActions.setStep(f.lane("Kick").id, 2, true))
+            f.ok(PulseGridActions.newScene(f.read()))
+            expect(f.read()).toMatchObject({scene: 2, sceneCount: 2})
+            expect(f.read().lanes.map(lane => lane.patterns.filter(p => p.scene === 2))).toEqual(f.read().lanes.map(() => []))
+            f.ok(PulseGridActions.newScene(f.read(), 1))
+            expect(f.read()).toMatchObject({scene: 3, sceneCount: 3})
+            expect(f.lane("Kick").patterns.find(p => p.scene === 3)?.notes.map(n => n.step)).toEqual([2])
+        })
+
+        it("removes and moves scenes and adds one to the song", () => {
+            const f = fixture()
+            f.ok(PulseGridActions.newScene(f.read()))
+            f.ok(PulseGridActions.newScene(f.read()))
+            f.ok(PulseGridActions.moveScene(3, 1))
+            expect(f.read().scene).toBe(1)
+            f.ok(PulseGridActions.removeScene(1))
+            expect(f.read()).toMatchObject({scene: 1, sceneCount: 2})
+            f.ok(PulseGridActions.addSceneToSong(2, "B"))
+            f.ok(PulseGridActions.setSongMode(true))
+            expect(f.read().song).toEqual({on: true, from: 1, entries: [{scene: 2, variation: "B", cycles: 1}]})
+        })
+
+        it("refuses a 17th scene by its op, with its message", () => {
+            const f = fixture()
+            for (let count = 1; count < 16; count++) {f.ok(PulseGridActions.newScene(f.read()))}
+            const results = f.apply(PulseGridActions.newScene(f.read()))
+            expect(results).toEqual([{ok: false, op: "newScene", error: expect.stringContaining("16")}])
+            expect(f.read().sceneCount).toBe(16)
+        })
+
+        it("says which scene and variation the song plays at a position", () => {
+            const doc: PulseGridDoc = {
+                ...fixture().read(),
+                song: {on: true, from: 2, entries: [
+                    {scene: 1, variation: "A", cycles: 1}, {rest: true, cycles: 0.5}, {scene: 2, variation: "C", cycles: 2}]}
+            }
+            const cycle = 16 * 240
+            const at = (position: number) => PulseGridView.songAt(doc, position)
+            expect(at(0)).toBeNull()
+            expect(at(239)).toBeNull()
+            expect(at(240)).toEqual({scene: 1, variation: "A"})
+            expect(at(240 + cycle - 1)).toEqual({scene: 1, variation: "A"})
+            expect(at(240 + cycle)).toBeNull()
+            expect(at(240 + 1.5 * cycle)).toEqual({scene: 2, variation: "C"})
+            expect(at(240 + 3.5 * cycle - 1)).toEqual({scene: 2, variation: "C"})
+            expect(at(240 + 3.5 * cycle)).toBeNull()
+            expect(PulseGridView.songAt({...doc, song: {on: true, from: 1, entries: []}}, 0)).toBeNull()
+        })
     })
 })

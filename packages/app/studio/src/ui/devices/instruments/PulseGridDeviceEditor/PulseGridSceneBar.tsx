@@ -8,6 +8,7 @@ import {Button} from "@/ui/components/Button"
 import {MenuButton} from "@/ui/components/MenuButton"
 import {PulseGridContext} from "./PulseGridContext"
 import {PulseGridDial} from "./PulseGridDial"
+import {PulseGridScenesLogic} from "./PulseGridScenesLogic"
 
 const className = Html.adoptStyleSheet(css, "PulseGridSceneBar")
 
@@ -22,8 +23,31 @@ export const PulseGridSceneBar = ({lifecycle, context}: Construct): HTMLElement 
     const buttons = lifecycle.own(new Terminator())
     let variationKey = ""
     const pickScene = (offset: number): void => {
-        context.send(PulseGridActions.pickScene((doc.getValue().scene - 1 + offset + 16) % 16 + 1))
+        const current = doc.getValue()
+        context.send(PulseGridActions.pickScene(PulseGridScenesLogic.wrap(current.scene, offset, current.sceneCount)))
     }
+    const modeButton = (song: boolean, text: string, tooltip: string): HTMLElement => {
+        const button: HTMLElement = (
+            <Button lifecycle={lifecycle} className="pg-button" appearance={{tooltip}}
+                    onClick={() => {
+                        const current = doc.getValue()
+                        context.send(PulseGridActions.setSongMode(song))
+                        const notice = PulseGridScenesLogic.switchNotice(song, current.song.entries.length)
+                        if (notice !== undefined) {context.notice.setValue({kind: "info", text: notice})}
+                    }}>
+                <span>{text}</span>
+            </Button>
+        )
+        button.dataset.song = song ? "song" : "pattern"
+        return button
+    }
+    const patternButton = modeButton(false, "Pattern", "Loop the scene and variation you pick")
+    const songButton = modeButton(true, "Song", "Play the scenes of the song in order")
+    lifecycle.own(doc.catchupAndSubscribe(owner => {
+        const {on} = owner.getValue().song
+        patternButton.classList.toggle("active", !on)
+        songButton.classList.toggle("active", on)
+    }))
     lifecycle.own(doc.catchupAndSubscribe(owner => {
         const current = owner.getValue()
         label.textContent = sceneName(current.scene)
@@ -55,7 +79,7 @@ export const PulseGridSceneBar = ({lifecycle, context}: Construct): HTMLElement 
                 <Button lifecycle={lifecycle} className="pg-button" appearance={{tooltip: "Previous scene"}}
                         onClick={() => pickScene(-1)}><span>‹</span></Button>
                 <MenuButton root={MenuItem.root().setRuntimeChildrenProcedure(parent => parent.addMenuItem(
-                    ...Array.from({length: 16}, (_, index) => {
+                    ...Array.from({length: doc.getValue().sceneCount}, (_, index) => {
                         const scene = index + 1
                         return MenuItem.default({label: `${scene}. ${sceneName(scene)}`, checked: doc.getValue().scene === scene})
                             .setTriggerProcedure(() => context.send(PulseGridActions.pickScene(scene)))
@@ -65,6 +89,7 @@ export const PulseGridSceneBar = ({lifecycle, context}: Construct): HTMLElement 
                         onClick={() => pickScene(1)}><span>›</span></Button>
             </div>
             <div className="pg-group variation"><span className="pg-label">Variation</span>{variations}</div>
+            <div className="pg-group mode"><span className="pg-label">Mode</span>{patternButton}{songButton}</div>
             <PulseGridDial lifecycle={lifecycle} label="Groove" unit="%" min={0} max={100}
                            get={() => doc.getValue().settings.groove}
                            set={value => context.send(PulseGridActions.setGroove(value), false)}

@@ -85,6 +85,26 @@ export type PulseGridSettings = {
     scale: int
 }
 
+// One stretch of the song (SPEC.md section 9): a scene and variation for so many cycles, or a rest. One cycle is
+// the head's length in steps; cycles may be a fraction.
+export type PulseGridSongEntry =
+    | {scene: int, variation: PulseGridVariation, cycles: number}
+    | {rest: true, cycles: number}
+
+// An entry as an op gives it: variation A and one cycle when left out.
+export type PulseGridSongEntryInput =
+    | {scene: int, variation?: PulseGridVariation, cycles?: number}
+    | {rest: true, cycles?: number}
+
+// The song as the scene regions on the PulseGrid's track say it. `on` is the Pattern / Song switch; `from` is the
+// song step (from 1) where the first scene region starts, 1 when there is none.
+export type PulseGridSong = {on: boolean, from: number, entries: ReadonlyArray<PulseGridSongEntry>}
+
+export namespace PulseGridSong {
+    export const MaxEntries = 256
+    export const MaxCycles = 4096
+}
+
 export type PulseGridDoc = {
     version: 1
     id: string // uuid of the head
@@ -93,6 +113,8 @@ export type PulseGridDoc = {
     scene: int // the scene that plays, 1..16
     variation: PulseGridVariation // the variation that plays
     scenes: ReadonlyArray<{scene: int, name: string, used: boolean}> // only named or used scenes
+    sceneCount: int // the highest scene that exists, 1..16 (SPEC.md section 9)
+    song: PulseGridSong
     lanes: ReadonlyArray<PulseGridLaneDoc>
 }
 
@@ -116,6 +138,12 @@ export type PulseGridOp =
     | {op: "setSetting", key: keyof PulseGridSettings | "name", value: number | string}
     | {op: "setPlaying", scene?: int, variation?: PulseGridVariation}
     | {op: "nameScene", scene: int, name: string}
+    // the scenes themselves and the song (SPEC.md section 9)
+    | {op: "newScene", name?: string, copyOf?: int}
+    | {op: "removeScene", scene: int}
+    | {op: "moveScene", scene: int, to: int}
+    | {op: "setSong", on?: boolean, entries?: ReadonlyArray<PulseGridSongEntryInput>, from?: number}
+    | {op: "addToSong", scene: int, variation?: PulseGridVariation, cycles?: number}
     // a lane
     | {
     op: "setLane", lane: PulseGridLaneRef, name?: string, kind?: "drum" | "melodic", pitch?: int,

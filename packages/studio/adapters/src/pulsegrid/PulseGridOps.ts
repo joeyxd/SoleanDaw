@@ -7,10 +7,11 @@ import {PulseGridDocs} from "./PulseGridDocs"
 import {PulseGridMoves} from "./PulseGridMoves"
 import {PulseGridNotes} from "./PulseGridNotes"
 import {PulseGridScales} from "./PulseGridScales"
+import {PulseGridSongRegions} from "./PulseGridSong"
 import {PulseGridText} from "./PulseGridText"
 import {
     PulseGridDoc, PulseGridError, PulseGridLaneRef, PulseGridNote, PulseGridNoteInput, PulseGridOp, PulseGridOpName,
-    PulseGridOpResult, PulseGridSlot
+    PulseGridOpResult, PulseGridSlot, PulseGridSong, PulseGridSongEntry, PulseGridSongEntryInput, PulseGridVariation
 } from "./PulseGridTypes"
 
 type Writes = Array<() => void>
@@ -90,6 +91,105 @@ const patternAnswer = (device: PulseGridDevice, lanes: ReadonlyArray<PulseGridLa
 const laneAnswer = (device: PulseGridDevice, lane: PulseGridLane): Answer =>
     doc => [PulseGridText.formatLane(doc.lanes[device.lanes.indexOf(lane)])]
 
+// What a scene holds, read before anything moves: the four patterns of every lane, its name and its flag.
+type SceneData = {
+    label: string, used: boolean, patterns: ReadonlyArray<ReadonlyArray<{length: int, notes: Int8Array}>>
+}
+const emptyScene = (device: PulseGridDevice): SceneData => ({
+    label: "", used: false,
+    patterns: device.lanes.map(() => Array.from({length: 4}, () => ({length: 0, notes: new Int8Array(0)})))
+})
+const sceneData = (device: PulseGridDevice, scene: int): SceneData => ({
+    label: device.head.scenes.getField(scene - 1).label.getValue(),
+    used: device.head.scenes.getField(scene - 1).used.getValue(),
+    patterns: device.lanes.map(lane => Array.from({length: 4}, (_, variation) => {
+        const pattern = lane.device.patterns.getField((scene - 1) * 4 + variation)
+        return {length: pattern.length.getValue(), notes: pattern.notes.getValue().slice()}
+    }))
+})
+const sceneHolds = (data: SceneData, variation: int): boolean => data.patterns.some(lane =>
+    lane[variation].length !== 0 || PulseGridNotes.decode(lane[variation].notes).length > 0)
+const writePatterns = (device: PulseGridDevice, scene: int, data: SceneData): void => {
+    device.lanes.forEach((lane, index) => data.patterns[index].forEach((stored, variation) => {
+        const pattern = lane.device.patterns.getField((scene - 1) * 4 + variation)
+        pattern.length.setValue(stored.length)
+        pattern.notes.setValue(stored.notes.slice())
+    }))
+}
+const sceneAnswer: Answer = doc => [PulseGridText.formatScenes(doc), PulseGridText.formatPlaying(doc),
+    ...(doc.song.entries.length > 0 ? [PulseGridText.formatSong(doc)] : [])].filter(line => line !== "")
+
+// Scenes 1..count change places: `map` says where each one goes (undefined: it is removed, and what it held is
+// emptied or overwritten). The playing number follows its scene. The song's scene notes follow too.
+const stageRearrange = (device: PulseGridDevice, writes: Writes, count: int,
+                        map: (scene: int) => int | undefined): void => {
+    const {head} = device
+    const scenes = Array.from({length: count}, (_, index) => index + 1)
+    const stored = scenes.map(scene => sceneData(device, scene))
+    for (const target of scenes) {
+        const source = scenes.find(scene => map(scene) === target)
+        if (source === target) {continue}
+        const data = source === undefined ? emptyScene(device) : stored[source - 1]
+        writes.push(() => {
+            writePatterns(device, target, data)
+            head.scenes.getField(target - 1).label.setValue(data.label)
+            head.scenes.getField(target - 1).used.setValue(data.used)
+        })
+    }
+    const playing = head.scene.getValue() + 1
+    const variation = head.variation.getValue()
+    let nextScene = map(playing)
+    let nextVariation = variation
+    if (nextScene === undefined) {
+        // The scene that takes the number plays, the last one when the last was removed; with A when the
+        // variation that played holds nothing there.
+        nextScene = playing < count ? playing : count - 1
+        const taker = scenes.find(scene => map(scene) === nextScene)!
+        if (!sceneHolds(stored[taker - 1], variation)) {nextVariation = 0}
+    }
+    const scene = nextScene
+    writes.push(() => {
+        if (scene !== playing) {head.scene.setValue(scene - 1)}
+        if (nextVariation !== variation) {head.variation.setValue(nextVariation)}
+        PulseGridSongRegions.renumber(device, map)
+    })
+}
+
+// One entry of a song as an op gives it, checked and with its defaults: variation A and one cycle.
+const songEntry = (input: PulseGridSongEntryInput, count: int): PulseGridSongEntry => {
+    if (input === null || typeof input !== "object" || Array.isArray(input)) {
+        fail(`entry ${String(input)} is not allowed: expected {scene, variation?, cycles?} or {rest: true, cycles?}`)
+    }
+    const raw = input as Record<string, unknown>
+    const cycles = raw.cycles === undefined ? 1 : raw.cycles
+    if (typeof cycles !== "number" || !Number.isFinite(cycles) || cycles <= 0 || cycles > PulseGridSong.MaxCycles) {
+        fail(`cycles ${String(cycles)} is not allowed: expected a number above 0 up to ${PulseGridSong.MaxCycles}`)
+    }
+    if (raw.rest !== undefined) {
+        if (raw.rest !== true || raw.scene !== undefined || raw.variation !== undefined) {
+            fail(`rest ${String(raw.rest)} is not allowed: expected {rest: true, cycles?} with no scene or variation`)
+        }
+        return {rest: true, cycles: cycles as number}
+    }
+    const scene = integer("scene", raw.scene, 1, count)
+    const variation = raw.variation === undefined ? "A" : raw.variation
+    if (variation !== "A" && variation !== "B" && variation !== "C" && variation !== "D") {
+        fail(`variation ${String(variation)} is not allowed: expected A, B, C or D`)
+    }
+    return {scene, variation: variation as PulseGridVariation, cycles: cycles as number}
+}
+// A region's position and length are 32 bit pulses.
+const checkEnd = (end: number): void => {
+    if (end > 2147483647) {
+        fail(`a song that ends at pulse ${end} is not allowed: expected at most 2147483647; use fewer cycles or a lower from`)
+    }
+}
+const checkUnit = (device: PulseGridDevice): void => {
+    if (!PulseGridSongRegions.hasUnit(device)) {
+        fail("the song is not allowed here: the PulseGrid is not on an audio unit, so there is no track for its regions")
+    }
+}
+
 // Only copy note modifiers; op metadata must never become note data.
 const modifiers = (input: Partial<PulseGridNote>): Partial<PulseGridNote> => {
     const result: Partial<PulseGridNote> = {}
@@ -158,7 +258,12 @@ const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes): Answ
             return doc => [PulseGridText.formatSettings(doc)]
         }
         case "setPlaying": {
-            const slot = slotOf(device, op)
+            let slot = slotOf(device, op)
+            // A scene with no variation named: the variation that plays is kept only where it holds something.
+            if (op.scene !== undefined && op.variation === undefined &&
+                !device.lanes.some(lane => PulseGridDocs.holds(lane, slot))) {
+                slot -= slot % 4
+            }
             writes.push(() => {
                 head.scene.setValue(Math.floor(slot / 4))
                 head.variation.setValue(slot % 4)
@@ -172,6 +277,7 @@ const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes): Answ
             writes.push(() => {
                 scene.label.setValue(name)
                 scene.used.setValue(true)
+                PulseGridSongRegions.relabel(device, op.scene)
             })
             return doc => [PulseGridText.formatScenes(doc)]
         }
@@ -368,6 +474,72 @@ const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes): Answ
             }
             return doc => [PulseGridText.formatLane(doc.lanes[
                 PulseGridDevice.find(device.composite).unwrap().lanes.findIndex(other => other.device === lane.device)])]
+        }
+        case "newScene": {
+            const count = PulseGridDocs.sceneCount(device)
+            if (count >= 16) {fail(`newScene with ${count} scenes is not allowed: expected at most 16 scenes`)}
+            const name = op.name === undefined ? undefined : string("name", op.name)
+            const copy = op.copyOf === undefined ? undefined : sceneData(device, integer("copyOf", op.copyOf, 1, count))
+            writes.push(() => {
+                const scene = head.scenes.getField(count)
+                scene.used.setValue(true)
+                if (name !== undefined) {scene.label.setValue(name)}
+                if (copy !== undefined) {writePatterns(device, count + 1, copy)}
+            })
+            return sceneAnswer
+        }
+        case "removeScene": {
+            const count = PulseGridDocs.sceneCount(device)
+            const scene = integer("scene", op.scene, 1, count)
+            if (count === 1) {fail(`removeScene ${scene} is not allowed: the only scene cannot be removed`)}
+            stageRearrange(device, writes, count, other => other === scene ? undefined : other > scene ? other - 1 : other)
+            return sceneAnswer
+        }
+        case "moveScene": {
+            const count = PulseGridDocs.sceneCount(device)
+            const scene = integer("scene", op.scene, 1, count)
+            const to = integer("to", op.to, 1, count)
+            stageRearrange(device, writes, count, other => other === scene ? to
+                : scene < to ? (other > scene && other <= to ? other - 1 : other)
+                    : (other >= to && other < scene ? other + 1 : other))
+            return sceneAnswer
+        }
+        case "setSong": {
+            const count = PulseGridDocs.sceneCount(device)
+            if (op.on === undefined && op.entries === undefined) {
+                fail("setSong with neither on nor entries is not allowed: expected at least one of them")
+            }
+            const on = op.on === undefined ? undefined : boolean("on", op.on)
+            const from = op.from === undefined ? 1 : number("from", op.from, 1, 8947849)
+            let entries: Array<PulseGridSongEntry> | undefined
+            if (op.entries !== undefined) {
+                const inputs = array("entries", op.entries)
+                if (inputs.length > PulseGridSong.MaxEntries) {
+                    fail(`entries ${inputs.length} is not allowed: expected 0 to ${PulseGridSong.MaxEntries} entries`)
+                }
+                entries = inputs.map((input, index) => {
+                    try {return songEntry(input, count)} catch (error) {
+                        if (error instanceof PulseGridError) {throw new PulseGridError(`entry ${index + 1}: ${error.message}`)}
+                        throw error
+                    }
+                })
+                checkUnit(device)
+                checkEnd(PulseGridSongRegions.endOf(device, entries, from))
+            }
+            const switchTo = on ?? (entries !== undefined && entries.length > 0 ? true : undefined)
+            writes.push(() => {
+                if (entries !== undefined) {PulseGridSongRegions.write(device, entries, from)}
+                if (switchTo !== undefined) {head.song.setValue(switchTo)}
+            })
+            return doc => [PulseGridText.formatSong(doc)]
+        }
+        case "addToSong": {
+            const entry = songEntry({scene: op.scene, variation: op.variation, cycles: op.cycles}, PulseGridDocs.sceneCount(device))
+            if ("rest" in entry) {return fail("addToSong is not allowed to add a rest: expected a scene")}
+            checkUnit(device)
+            checkEnd(PulseGridSongRegions.end(device) + PulseGridSongRegions.duration(device, entry.cycles))
+            writes.push(() => PulseGridSongRegions.append(device, entry))
+            return doc => [PulseGridText.formatSong(doc)]
         }
         default: {
             // Proven exhaustive for typed callers; an agent's raw JSON can still get here.

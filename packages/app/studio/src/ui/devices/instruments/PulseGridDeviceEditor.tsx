@@ -1,6 +1,6 @@
 import css from "./PulseGridDeviceEditor.sass?inline"
-import {DeviceHost, InstrumentCompositeBoxAdapter, PulseGridView} from "@opendaw/studio-adapters"
-import {Lifecycle} from "@opendaw/lib-std"
+import {DeviceHost, InstrumentCompositeBoxAdapter, PulseGridActions, PulseGridView} from "@opendaw/studio-adapters"
+import {Lifecycle, Terminator} from "@opendaw/lib-std"
 import {createElement} from "@opendaw/lib-jsx"
 import {Html} from "@opendaw/lib-dom"
 import {IconSymbol} from "@opendaw/studio-enums"
@@ -27,10 +27,32 @@ export const PulseGridDeviceEditor = ({lifecycle, service, adapter, deviceHost}:
     const preview: HTMLElement = <div className="mini-content" aria-hidden="true"/>
     const label: HTMLElement = <h1/>
     const open = (): void => PulseGridWindows.open(service, adapter.box)
+    const sceneButtons: HTMLElement = <div className="scenes" role="group" aria-label="Scenes"/>
+    const sceneTerminator = lifecycle.own(new Terminator())
+    let sceneKey = ""
+    lifecycle.own(context.doc.catchupAndSubscribe(owner => {
+        const {scene, sceneCount} = owner.getValue()
+        const key = `${scene}:${sceneCount}`
+        if (key === sceneKey) {return}
+        sceneKey = key
+        sceneTerminator.terminate()
+        sceneButtons.replaceChildren(...Array.from({length: sceneCount}, (_, index): HTMLElement => {
+            const number = index + 1
+            const button: HTMLElement = (
+                <Button lifecycle={sceneTerminator} className={Html.buildClassList("scene", number === scene && "active")}
+                        appearance={{tooltip: `Scene ${number}`}}
+                        onClick={() => context.send(PulseGridActions.pickScene(number))}>
+                    <span>{String(number)}</span>
+                </Button>
+            )
+            button.dataset.stripScene = String(number)
+            return button
+        }))
+    }))
     lifecycle.own(context.doc.catchupAndSubscribe(owner => {
         const doc = owner.getValue()
         label.textContent = doc.name
-        summary.textContent = `${doc.lanes.length} lanes · scene ${doc.scene} ${doc.variation} · ${doc.settings.length} steps`
+        summary.textContent = `${doc.lanes.length} lanes · scene ${doc.scene} ${doc.variation} · ${doc.settings.length} steps${doc.song.on ? " · song" : ""}`
         preview.replaceChildren(...doc.lanes.map(lane => {
             const view = PulseGridView.steps(doc, lane)
             return (
@@ -53,6 +75,7 @@ export const PulseGridDeviceEditor = ({lifecycle, service, adapter, deviceHost}:
                                           appearance={{tooltip: "Open PulseGrid"}}><span>Open</span></Button>
                               </div>
                               {summary}
+                              {sceneButtons}
                               <Button lifecycle={lifecycle} className="mini" onClick={open}
                                       appearance={{tooltip: "Open PulseGrid sequencer"}}>{preview}</Button>
                           </div>
