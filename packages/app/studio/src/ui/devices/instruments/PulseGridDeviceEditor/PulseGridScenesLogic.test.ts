@@ -60,8 +60,13 @@ describe("PulseGridScenesLogic", () => {
     it("says when to show the notices", () => {
         expect(Logic.addedNotice(false)).toBe("Added to the song. Switch to Song to hear it.")
         expect(Logic.addedNotice(true)).toBeUndefined()
-        expect(Logic.switchNotice(true, 0)).toBe("The song is empty: right-click a scene, Add to song.")
-        expect(Logic.switchNotice(true, 2)).toBeUndefined()
-        expect(Logic.switchNotice(false, 0)).toBeUndefined()
+    })
+    it("says the song is empty only while Song is on and the song has no entry", () => {
+        expect(Logic.emptySong(true, 0)).toBe(true)
+        expect(Logic.emptySong(true, 2)).toBe(false)
+        expect(Logic.emptySong(false, 0)).toBe(false)
+        expect(Logic.songSummary(true, 0)).toBe(" · song, empty")
+        expect(Logic.songSummary(true, 2)).toBe(" · song")
+        expect(Logic.songSummary(false, 0)).toBe("")
     })
 })

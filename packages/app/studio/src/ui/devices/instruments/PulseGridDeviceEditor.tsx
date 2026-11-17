@@ -10,6 +10,7 @@ import {MenuItems} from "@/ui/devices/menu-items"
 import {DevicePeakMeter} from "@/ui/devices/panel/DevicePeakMeter"
 import {Button} from "@/ui/components/Button"
 import {PulseGridContext} from "./PulseGridDeviceEditor/PulseGridContext"
+import {PulseGridScenesLogic} from "./PulseGridDeviceEditor/PulseGridScenesLogic"
 import {PulseGridWindows} from "./PulseGridDeviceEditor/PulseGridWindows"
 
 const className = Html.adoptStyleSheet(css, "PulseGridDeviceEditor")
@@ -52,7 +53,7 @@ export const PulseGridDeviceEditor = ({lifecycle, service, adapter, deviceHost}:
     lifecycle.own(context.doc.catchupAndSubscribe(owner => {
         const doc = owner.getValue()
         label.textContent = doc.name
-        summary.textContent = `${doc.lanes.length} lanes · scene ${doc.scene} ${doc.variation} · ${doc.settings.length} steps${doc.song.on ? " · song" : ""}`
+        summary.textContent = `${doc.lanes.length} lanes · scene ${doc.scene} ${doc.variation} · ${doc.settings.length} steps${PulseGridScenesLogic.songSummary(doc.song.on, doc.song.entries.length)}`
         preview.replaceChildren(...doc.lanes.map(lane => {
             const view = PulseGridView.steps(doc, lane)
             return (

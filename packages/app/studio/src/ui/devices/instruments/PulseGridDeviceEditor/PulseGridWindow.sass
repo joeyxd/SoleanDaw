@@ -11,6 +11,7 @@ component
   --pg-melody: #a22ada
   --pg-play: #00a070
   --pg-rec: #fd5e7f
+  --pg-warn: #fda729
   --pg-radius: 10px
   position: relative
   display: flex
@@ -44,6 +45,21 @@ component
       min-width: 0
       min-height: 0
       overflow: auto
+
+  > .empty-song
+    display: flex
+    flex-wrap: wrap
+    align-items: center
+    justify-content: space-between
+    gap: 8px 12px
+    padding: 4px 4px 4px 12px
+    border: 1px solid var(--pg-warn)
+    border-radius: var(--pg-radius)
+    background: var(--pg-panel)
+    color: var(--pg-warn)
+
+    &.hidden
+      display: none
 
   .pg-group
     display: flex

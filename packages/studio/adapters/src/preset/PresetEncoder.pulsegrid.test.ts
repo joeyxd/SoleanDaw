@@ -90,6 +90,7 @@ describe("PresetEncoder / PresetDecoder (PulseGrid)", () => {
         expectWhole(whole, loaded)
         // without it: the scene regions stay behind, the rest is the same. The switch is the head's, so it comes
         // along: a PulseGrid saved in Song loads in Song with an empty song, and rests until it is switched back.
+        // The window says so for as long as it lasts and offers the switch (PulseGridWindow, the empty-song line).
         expect(saved.song.on).toBe(true)
         const plain = empty()
         plain.boxGraph.beginTransaction()

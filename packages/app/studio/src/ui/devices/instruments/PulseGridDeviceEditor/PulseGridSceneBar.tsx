@@ -29,12 +29,7 @@ export const PulseGridSceneBar = ({lifecycle, context}: Construct): HTMLElement 
     const modeButton = (song: boolean, text: string, tooltip: string): HTMLElement => {
         const button: HTMLElement = (
             <Button lifecycle={lifecycle} className="pg-button" appearance={{tooltip}}
-                    onClick={() => {
-                        const current = doc.getValue()
-                        context.send(PulseGridActions.setSongMode(song))
-                        const notice = PulseGridScenesLogic.switchNotice(song, current.song.entries.length)
-                        if (notice !== undefined) {context.notice.setValue({kind: "info", text: notice})}
-                    }}>
+                    onClick={() => context.send(PulseGridActions.setSongMode(song))}>
                 <span>{text}</span>
             </Button>
         )
