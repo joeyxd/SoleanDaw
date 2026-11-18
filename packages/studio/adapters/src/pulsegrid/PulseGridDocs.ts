@@ -11,7 +11,8 @@ export namespace PulseGridDocs {
     const sound = ({instrument}: PulseGridLane): PulseGridSound | null => instrument.mapOr(box => {
         const result: PulseGridSound = {
             instrument: box.name.replace(/(?:DeviceBox|Box)$/, ""),
-            label: DeviceBoxUtils.lookupLabelField(box).getValue()
+            label: DeviceBoxUtils.lookupLabelField(box).getValue(),
+            params: [] // T-1118: the instrument's parameters (SPEC.md section 10)
         }
         if (box instanceof NanoDeviceBox) {
             box.file.targetVertex.ifSome(({box: file}) => {
@@ -50,6 +51,7 @@ export namespace PulseGridDocs {
             effects: cell.audioEffects.pointerHub.incoming().map(({box}) => box)
                 .sort((a, b) => DeviceBoxUtils.lookupIndexField(a).getValue() - DeviceBoxUtils.lookupIndexField(b).getValue())
                 .map(box => box.name.replace(/DeviceBox$/, "")),
+            chain: [], // T-1118: the effects with state and parameters (SPEC.md section 10)
             mix: {gain: cell.gain.getValue(), pan: percent(cell.pan.getValue()),
                 mute: cell.mute.getValue(), solo: cell.solo.getValue()},
             patterns

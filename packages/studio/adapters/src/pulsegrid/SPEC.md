@@ -418,3 +418,75 @@ entries. `parseText` reads it as one `setSong`; `song on` or `song off` alone on
 thumbnail (per lane, which steps hold a note) of the variation that plays for the playing scene, else of A, else
 of the first variation that holds anything. `PulseGridView.songAt` gives the scene and variation the song plays
 at a song position, so in Song the column can mark it.
+
+## 10. Sounds: parameters, the four knobs, the effect chain
+
+Family 6, first slice (designed 18 Nov). A lane's sound is the instrument of its cell and the cell's audio-effect
+chain. The cell's midi chain is not part of it (its first device is the lane device itself).
+
+### Parameters
+
+A parameter of a device (the instrument or one audio effect) is a top-level primitive field of its box (float32,
+int32 or boolean) that is not deprecated and whose pointer rules accept `Pointers.Automation`. Nested fields
+(Tubular's operators, Vaporisateur's oscillators) are not parameters here. Order: field key.
+
+`PulseGridParamDoc`: `name` (the field name), `type` float, int or bool, `value` in the field's own unit as stored,
+`unit` (the field's unit, "" when none), and `min` and `max` when the field's constraints give a range:
+`{min, max}` objects as given (decibel objects: their min and max), `unipolar` 0..1, `bipolar` -1..1, int
+`{values}` the smallest and largest value, `{length}` 0..length-1, `non-negative` and `index` min 0. Anything
+else gives no range; a value must still be finite.
+
+The doc: `sound.params` holds the instrument's parameters; `chain` holds the effects in order, each with `index`
+(from 1), `name` (box name without "DeviceBox"), `label`, `enabled` and `params`. `effects` (names only) stays.
+
+### Text: the `sounds` block
+
+Written after the `lanes` block, read only like it (`parseText` skips it). One line per lane with an instrument,
+then one line per effect of that lane:
+
+    sounds
+    1 Kick  Nano  volume 0dB  octave 0  tune 0ct  root-key 60  release 0.2s  attack 0.001s  ...
+    1 Kick  fx 1 Crusher  crush 0.5  bits 8  boost 0dB  mix 1
+    1 Kick  fx 2 Delay  off  ...
+
+Pieces are separated by two spaces. A parameter is `name value`, the field's unit appended without a space when
+it has one; floats with at most 3 decimals and no trailing zeros, never -0; ints as they are; booleans `on` or
+`off`. An instrument line: lane position, lane name (as in `lanes`), instrument name, its parameters. An effect
+line: lane position, lane name, `fx <index> <name>`, `off` when disabled, its parameters.
+
+### Ops
+
+| op | what it does |
+|---|---|
+| `setParam` | writes one parameter: of the instrument when `effect` is left out, else of effect `effect` (1..n). `value` is a number for float and int (an integer for int) or a boolean for bool, inside `min`..`max` when there is a range. Refused when the lane has no instrument, the effect does not exist, or the device has no such parameter (the message lists the parameters it has) |
+| `addEffect` | adds the effect named `effect` (one of the host's `PulseGridOpsEnv.effects.names`; the message lists them) at position `at` (1..n+1, default n+1); the effects from that position on move down one. Refused when the host passed no effect maker |
+| `removeEffect` | removes effect `effect` (1..n) with everything it owns; the effects after it move up one |
+| `setEffect` | `enabled` switches the effect on or off; `to` (1..n) moves it there, the others keep their order. At least one of the two |
+
+They answer the lane's lines of the `sounds` block (the instrument line and its effect lines).
+
+The host: `PulseGridOps.apply(composite, ops, env)` and `PulseGridRequests.handle(graph, editing, raw, env)`.
+`env.effects` is an effect maker; studio-core's `PulseGridEffects.maker(boxGraph)` gives the one built on
+SoleanDaw's own factories (`create` makes the box and moves the effects after it). Every host passes it: the
+window's context, the agent inbox, the DAW sidecar.
+
+### The four knobs
+
+`PulseGridKnobs.of(instrument, params)`: the panel's four big knobs (map G5) and which parameter each moves.
+Nano: Tune `tune`, Decay `release`, Attack `attack`, Level `volume`. Tubular: Tone `cutoff`, Resonance
+`resonance`, Tune `tune`, Level `volume`. Vaporisateur: Cutoff, Resonance, Attack, Release. Any other instrument:
+its first four float parameters. Knobs are screen words; ops always name the parameter. The map's Tone and Drive
+for drums wait on Joi (a Nano has neither field).
+
+### What the screen adds: the instrument panel (map G1 to G8)
+
+A column at the right of the window that follows the selected lane: arrows step through the lanes, then the
+lane's name and its sound. Three tabs:
+
+| tab | on the screen | ops |
+|---|---|---|
+| Instrument | the instrument's picture (its icon until the pictures exist), the sound and Change sound, the four knobs, the lane's Chance, Humanize and Step accents | `setParam`, `setLaneSound`, `setLane` (`probability`, `humanize`, `accent`) |
+| Effects | the chain: each effect with on/off, up, down, remove, and its parameters when opened; Add effect; Open in device panel (SoleanDaw's own editors for the cell) | `setEffect`, `removeEffect`, `addEffect`, `setParam` with `effect` |
+| Mix | Volume, Pan, Mute, Solo | `setLaneMix` |
+
+A knob or dial writes with `send(ops, false)` while it moves and marks once at the end, so one turn is one undo.

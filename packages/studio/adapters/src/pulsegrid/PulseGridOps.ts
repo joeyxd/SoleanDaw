@@ -11,7 +11,7 @@ import {PulseGridSongRegions} from "./PulseGridSong"
 import {PulseGridText} from "./PulseGridText"
 import {
     PulseGridDoc, PulseGridError, PulseGridLaneRef, PulseGridNote, PulseGridNoteInput, PulseGridOp, PulseGridOpName,
-    PulseGridOpResult, PulseGridSlot, PulseGridSong, PulseGridSongEntry, PulseGridSongEntryInput, PulseGridVariation
+    PulseGridOpResult, PulseGridOpsEnv, PulseGridSlot, PulseGridSong, PulseGridSongEntry, PulseGridSongEntryInput, PulseGridVariation
 } from "./PulseGridTypes"
 
 type Writes = Array<() => void>
@@ -222,7 +222,7 @@ const replacement = (lane: PulseGridLane, inputs: ReadonlyArray<PulseGridNoteInp
     return result
 }
 
-const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes): Answer => {
+const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes, env: PulseGridOpsEnv): Answer => {
     const {head} = device
     if (op === null || typeof op !== "object") {fail(`op ${String(op)} is not allowed: expected an object`)}
     switch (op.op) {
@@ -541,6 +541,14 @@ const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes): Answ
             writes.push(() => PulseGridSongRegions.append(device, entry))
             return doc => [PulseGridText.formatSong(doc)]
         }
+        case "setParam":
+        case "addEffect":
+        case "removeEffect":
+        case "setEffect": {
+            // T-1118 contract stub: SPEC.md section 10 says what each does. `env` carries the effect maker.
+            void env
+            return fail(`${op.op} is not built yet`)
+        }
         default: {
             // Proven exhaustive for typed callers; an agent's raw JSON can still get here.
             const exhaustive: never = op
@@ -550,7 +558,8 @@ const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes): Answ
 }
 
 export namespace PulseGridOps {
-    export const apply = (composite: InstrumentCompositeBox, ops: ReadonlyArray<PulseGridOp>): Array<PulseGridOpResult> => {
+    export const apply = (composite: InstrumentCompositeBox, ops: ReadonlyArray<PulseGridOp>,
+                          env: PulseGridOpsEnv = {}): Array<PulseGridOpResult> => {
         const found = PulseGridDevice.find(composite)
         if (found.isEmpty()) {throw new PulseGridError("Composite is not a PulseGrid; expected a PulseGrid lane device")}
         let device = found.unwrap()
@@ -558,7 +567,7 @@ export namespace PulseGridOps {
         for (const op of ops) {
             try {
                 const writes: Writes = []
-                const answer = prepare(device, op, writes)
+                const answer = prepare(device, op, writes, env)
                 writes.forEach(write => write())
                 if (op.op === "addLane" || op.op === "removeLane" || op.op === "moveLane" || op.op === "setLaneSound") {
                     device = PulseGridDevice.find(composite).unwrap()

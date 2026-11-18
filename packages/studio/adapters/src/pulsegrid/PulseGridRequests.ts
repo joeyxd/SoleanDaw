@@ -5,7 +5,7 @@ import {PulseGridDevice} from "./PulseGridDevice"
 import {PulseGridDocs} from "./PulseGridDocs"
 import {PulseGridOps} from "./PulseGridOps"
 import {PulseGridText} from "./PulseGridText"
-import {PulseGridError, PulseGridOp, PulseGridOpResult} from "./PulseGridTypes"
+import {PulseGridError, PulseGridOp, PulseGridOpResult, PulseGridOpsEnv} from "./PulseGridTypes"
 
 // What an agent asks of the PulseGrids of a project, answered the same way wherever the project is: open in
 // Joi's tab (the tab runs this on its live project) or saved on the server (the DAW sidecar runs it headless).
@@ -91,7 +91,8 @@ export namespace PulseGridRequests {
     // Runs one request against the project's live graph. A request that changes anything is one undo step, and
     // all or nothing: when any op is refused, every op before it is taken back and the answer names the op.
     // Only PulseGridError becomes a refusal; any other error is a bug and travels on.
-    export const handle = (graph: BoxGraph, editing: BoxEditing, raw: unknown): PulseGridAnswer => {
+    export const handle = (graph: BoxGraph, editing: BoxEditing, raw: unknown,
+                           env: PulseGridOpsEnv = {}): PulseGridAnswer => {
         let track: PulseGridTrack | undefined
         const named = () => isDefined(track) ? {track: {id: track.id, name: track.name}} : {}
         try {
@@ -104,7 +105,7 @@ export namespace PulseGridRequests {
             const ops = opsOf(request)
             // A refusal throws out of the transaction, so the graph rolls it back and no undo step is made.
             const results = editing.modify(() => {
-                const results = PulseGridOps.apply(composite, ops)
+                const results = PulseGridOps.apply(composite, ops, env)
                 if (results.length !== ops.length || results.some(result => !result.ok)) {throw new Refused(results)}
                 return results
             }).unwrapOrElse(() => [])

@@ -1,4 +1,6 @@
+import type {Field} from "@opendaw/lib-box"
 import {int} from "@opendaw/lib-std"
+import type {EffectPointerType} from "../DeviceAdapter"
 
 // The contract of the PulseGrid model: the document an agent or the screen reads, and the operations both write
 // with. Rules and the text form are in ./SPEC.md. Everything here is plain JSON, so it travels as is.
@@ -48,10 +50,31 @@ export type PulseGridPatternDoc = {
     notes: ReadonlyArray<PulseGridNote> // sorted by step, then pitch
 }
 
+// One parameter of a device in a lane's cell (the instrument or one of its audio effects): a top-level field of the
+// device box that can be automated. Values are in the field's own unit, as stored (SPEC.md section 10).
+export type PulseGridParamDoc = {
+    name: string // the field name: "tune", "release", "cutoff", "volume", ...
+    type: "float" | "int" | "bool"
+    value: number | boolean
+    unit: string // the field's unit, "" when it has none
+    min?: number // the allowed range, when the field's constraints give one
+    max?: number
+}
+
+// One audio effect of a lane's cell, in chain order.
+export type PulseGridEffectDoc = {
+    index: int // position in the chain, 1 is the first
+    name: string // box name without "DeviceBox": "Crusher", "Revamp", "Delay", ...
+    label: string
+    enabled: boolean
+    params: ReadonlyArray<PulseGridParamDoc>
+}
+
 export type PulseGridSound = {
     instrument: string // the instrument's box name without "DeviceBox": "Nano", "Tubular", "Playfield", ...
     label: string
     sample?: {uuid: string, name: string} // when the instrument plays one audio file
+    params: ReadonlyArray<PulseGridParamDoc> // the instrument's parameters, in field-key order
 }
 
 export type PulseGridLaneDoc = {
@@ -70,6 +93,7 @@ export type PulseGridLaneDoc = {
     seed: int
     sound: PulseGridSound | null // null: the cell has no instrument
     effects: ReadonlyArray<string> // audio effects of the cell, in order, box names without "DeviceBox"
+    chain: ReadonlyArray<PulseGridEffectDoc> // the same effects with their state and parameters
     mix: {gain: number, pan: number, mute: boolean, solo: boolean} // gain in dB, pan -100 (left) to 100 (right)
     patterns: ReadonlyArray<PulseGridPatternDoc> // only slots that hold notes or an own length, by scene then variation
 }
@@ -181,6 +205,21 @@ export type PulseGridOp =
     | {op: "removeLane", lane: PulseGridLaneRef}
     | {op: "moveLane", lane: PulseGridLaneRef, to: int}
     | {op: "setLaneSound", lane: PulseGridLaneRef, sound: PulseGridSoundInput}
+    // the sound of a lane: a parameter of its instrument (effect left out) or of one audio effect, and the effect
+    // chain itself (SPEC.md section 10). `effect` counts from 1 in chain order; `value` is in the field's own unit.
+    | {op: "setParam", lane: PulseGridLaneRef, effect?: int, param: string, value: number | boolean}
+    | {op: "addEffect", lane: PulseGridLaneRef, effect: string, at?: int} // effect: a name of PulseGridOpsEnv.effects
+    | {op: "removeEffect", lane: PulseGridLaneRef, effect: int}
+    | {op: "setEffect", lane: PulseGridLaneRef, effect: int, enabled?: boolean, to?: int}
+
+// What the host running the ops can do beyond the box graph. The model package cannot make audio effects (their
+// factories live in studio-core), so the host passes a maker; without one, addEffect is refused.
+export type PulseGridEffectMaker = {
+    readonly names: ReadonlyArray<string> // effects it can make, box names without "DeviceBox", in menu order
+    // makes the effect `name` (one of `names`) at chain position `index` (0-based) of the cell's audio chain `host`
+    create(name: string, host: Field<EffectPointerType>, index: int): void
+}
+export type PulseGridOpsEnv = {readonly effects?: PulseGridEffectMaker}
 
 export type PulseGridOpName = PulseGridOp["op"]
 
