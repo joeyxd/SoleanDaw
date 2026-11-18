@@ -34,15 +34,28 @@ export namespace PulseGridDocs {
         return {}
     }
 
+    // A float stored as a fraction with the unit "%" (unipolar or bipolar) reads and writes as a percent, as every
+    // amount in PulseGrid does: Crusher's mix 1 is "mix 100%" (SPEC.md section 10). 100 for such a field, else 1.
+    export const percentScale = (field: PulseGridParamField): number => {
+        if (!(field instanceof Float32Field) || field.unit !== "%") {return 1}
+        const {min, max} = rangeOf(field)
+        return min !== undefined && max !== undefined && min >= -1 && max <= 1 ? 100 : 1
+    }
+
     // A float32 shows its shortest form (0.2, not 0.20000000298).
     const clean = (value: number): number => Number(value.toPrecision(7))
+    const scaled = (field: PulseGridParamField): {min?: number, max?: number} => {
+        const scale = percentScale(field)
+        const {min, max} = rangeOf(field)
+        return {...(min === undefined ? {} : {min: min * scale}), ...(max === undefined ? {} : {max: max * scale})}
+    }
 
     const readParam = (field: PulseGridParamField): PulseGridParamDoc => field instanceof BooleanField
         ? {name: field.fieldName, type: "bool", value: field.getValue(), unit: ""}
         : {
             name: field.fieldName, type: field instanceof Int32Field ? "int" : "float",
-            value: field instanceof Int32Field ? field.getValue() : clean(field.getValue()), unit: field.unit,
-            ...rangeOf(field)
+            value: field instanceof Int32Field ? field.getValue() : clean(field.getValue() * percentScale(field)),
+            unit: field.unit, ...scaled(field)
         }
 
     export const paramsOf = (box: Box): ReadonlyArray<PulseGridParamDoc> => paramFields(box).map(readParam)

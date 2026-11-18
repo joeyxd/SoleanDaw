@@ -104,7 +104,7 @@ describe("PulseGrid sounds: parameters", () => {
         expect(PulseGridDocs.paramsOf(tubular).find(param => param.name === "tune"))
             .toEqual({name: "tune", type: "float", value: 0, unit: "ct", min: -100, max: 100})
         expect(PulseGridDocs.paramsOf(tubular).find(param => param.name === "cutoff"))
-            .toMatchObject({unit: "%", min: 0, max: 1})
+            .toMatchObject({unit: "%", min: 0, max: 100, value: 100})
     })
 
     it("writes a float, an int and a bool of the instrument and answers the lane's sounds lines", () => {
@@ -136,6 +136,17 @@ describe("PulseGrid sounds: parameters", () => {
         const crusher = f.read().lanes[0].chain[0]
         expect(crusher.params.find(param => param.name === "bits")!.value).toBe(8)
         expect(crusher.params.find(param => param.name === "boost")!.value).toBe(6)
+    })
+
+    it("gives and takes a fraction stored with the unit % as a percent", () => {
+        const f = fixture()
+        f.ok({op: "addEffect", lane: 1, effect: "Crusher"},
+            {op: "setParam", lane: 1, effect: 1, param: "mix", value: 50})
+        const mix = f.read().lanes[0].chain[0].params.find(param => param.name === "mix")!
+        expect(mix).toMatchObject({value: 50, unit: "%", min: 0, max: 100})
+        const refused = f.apply({op: "setParam", lane: 1, effect: 1, param: "mix", value: 150})
+        expect(refused.at(-1)).toMatchObject({ok: false})
+        expect(JSON.stringify(refused.at(-1))).toContain("0..100%")
     })
 
     it("refuses a value outside the range and says the range, writing nothing", () => {
@@ -238,7 +249,7 @@ describe("PulseGrid sounds: the effect chain", () => {
         const lines = linesOf(results[1])
         expect(lines).toHaveLength(2)
         expect(lines[0].startsWith("1 kick  Nano  volume -3dB  octave 0oct  tune 0ct  root-key 60  release 0.1s")).toBe(true)
-        expect(lines[1]).toBe("1 kick  fx 1 Crusher  off  crush 0%  bits 16bits  boost 0dB  mix 1%")
+        expect(lines[1]).toBe("1 kick  fx 1 Crusher  off  crush 0%  bits 16bits  boost 0dB  mix 100%")
     })
 })
 
@@ -251,7 +262,7 @@ describe("PulseGrid sounds: text", () => {
         const at = lines.indexOf("sounds")
         expect(at).toBeGreaterThan(lines.indexOf("lanes"))
         expect(lines[at + 1]).toMatch(/^ {2}1 kick {2}Nano {2}volume -3dB {2}octave 0oct {2}tune 0ct {2}root-key 60 {2}/)
-        expect(lines[at + 2]).toBe("  1 kick  fx 1 Crusher  crush 0%  bits 8bits  boost 0dB  mix 1%")
+        expect(lines[at + 2]).toBe("  1 kick  fx 1 Crusher  crush 0%  bits 8bits  boost 0dB  mix 100%")
         expect(lines[at + 3]).toBe("scene 1 A")
         const parsed = PulseGridText.parseText(text)
         expect(parsed.errors).toEqual([])

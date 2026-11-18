@@ -569,7 +569,9 @@ const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes, env: 
                 const value = boolean("value", op.value)
                 writes.push(() => target.setValue(value))
             } else {
-                const {min = -Infinity, max = Infinity} = PulseGridDocs.rangeOf(target)
+                const scale = PulseGridDocs.percentScale(target) // a fraction stored, a percent given
+                const range = PulseGridDocs.rangeOf(target)
+                const min = (range.min ?? -Infinity) * scale, max = (range.max ?? Infinity) * scale
                 const value = op.value
                 const kind = target instanceof Int32Field ? "an integer" : "a number"
                 if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max ||
@@ -577,7 +579,7 @@ const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes, env: 
                     fail(`${target.fieldName} ${String(value)} is not allowed: expected ${kind}${
                         min === -Infinity && max === Infinity ? "" : ` ${min}..${max}`}${target.unit}`)
                 }
-                writes.push(() => target.setValue(value as number))
+                writes.push(() => target.setValue((value as number) / scale))
             }
             return laneSounds(device, lane)
         }

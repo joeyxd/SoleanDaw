@@ -431,7 +431,9 @@ int32 or boolean) that is not deprecated and whose pointer rules accept `Pointer
 (Tubular's operators, Vaporisateur's oscillators) are not parameters here. Order: field key.
 
 `PulseGridParamDoc`: `name` (the field name), `type` float, int or bool, `value` in the field's own unit as stored,
-`unit` (the field's unit, "" when none), and `min` and `max` when the field's constraints give a range:
+`unit` (the field's unit, "" when none), and `min` and `max` when the field's constraints give a range. A float
+stored as a fraction with the unit "%" (unipolar or bipolar) is given and taken as a percent, as every amount in
+PulseGrid is: Crusher's `mix` stored as 1 reads 100, and `setParam` with 50 stores 0.5. The ranges:
 `{min, max}` objects as given (decibel objects: their min and max), `unipolar` 0..1, `bipolar` -1..1, int
 `{values}` the smallest and largest value, `{length}` 0..length-1, `non-negative` and `index` min 0. Anything
 else gives no range; a value must still be finite.
@@ -446,7 +448,7 @@ then one line per effect of that lane:
 
     sounds
     1 Kick  Nano  volume -3dB  octave 0oct  tune 0ct  root-key 60  release 0.1s  attack 0.003s  ...
-    1 Kick  fx 1 Crusher  crush 0.5%  bits 8bits  boost 0dB  mix 1%
+    1 Kick  fx 1 Crusher  crush 50%  bits 8bits  boost 0dB  mix 100%
     1 Kick  fx 2 Delay  off  ...
 
 Pieces are separated by two spaces. A parameter is `name value`, the field's unit appended without a space when
