@@ -40,11 +40,27 @@ component
     min-width: 0
     overflow: hidden
 
+    // the scenes on top (up to half of the column) and the sound browser under them
+    > .side
+      flex: 0 0 200px
+      width: 200px
+      display: flex
+      flex-direction: column
+      gap: 8px
+      min-width: 0
+      min-height: 0
+
     > .lanes
       flex: 1
       min-width: 0
       min-height: 0
       overflow: auto
+
+      // a sound is being dragged over the lanes, not over a row: it makes a new lane
+      &.dropping
+        outline: 1.5px dashed var(--pg-violet-ink)
+        outline-offset: -3px
+        border-radius: var(--pg-radius)
 
   > .empty-song
     display: flex

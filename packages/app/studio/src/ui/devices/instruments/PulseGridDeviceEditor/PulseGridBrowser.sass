@@ -1,0 +1,168 @@
+component
+  flex: 1 1 0
+  min-height: 0
+  min-width: 0
+  display: flex
+  flex-direction: column
+  gap: 6px
+  box-sizing: border-box
+  padding-bottom: 6px
+  border: 1px solid var(--pg-line, #262a52)
+  border-radius: var(--pg-radius, 10px)
+  background: var(--pg-panel, #0b0e23)
+  color: var(--pg-fg, #efeaff)
+  font-size: 12px
+
+  button
+    font: inherit
+    color: inherit
+    cursor: pointer
+
+    &:focus-visible
+      outline: 1px solid var(--pg-violet-ink, #cfa8ff)
+      outline-offset: 1px
+
+  > .heading
+    flex: 0 0 auto
+    padding: 10px 12px 0
+    color: var(--pg-muted, #a7a3c9)
+    font-size: 11px
+    letter-spacing: 0.12em
+
+  > .tabs
+    flex: 0 0 auto
+    display: flex
+    gap: 3px
+    padding: 0 8px
+
+    > button
+      flex: 1
+      min-width: 0
+      height: 24px
+      padding: 0
+      border: none
+      border-radius: 6px
+      background: transparent
+      box-shadow: inset 0 0 0 1px var(--pg-line, #262a52)
+      color: var(--pg-muted, #a7a3c9)
+      font-size: 11px
+
+      &:hover
+        box-shadow: inset 0 0 0 1px var(--pg-violet-ink, #cfa8ff)
+
+      &.active
+        background: var(--pg-violet, #a22ada)
+        box-shadow: 0 0 10px #a22ada80
+        color: var(--pg-fg, #efeaff)
+
+  > .search
+    flex: 0 0 auto
+    padding: 0 8px
+
+    input
+      font-size: 12px
+
+  > .list
+    flex: 1
+    min-height: 0
+    padding: 0 4px 0 8px
+    overflow-y: auto
+    scrollbar-width: thin
+    scrollbar-color: var(--pg-line, #262a52) transparent
+    user-select: none
+
+    > .state, > .more
+      padding: 8px 4px
+      color: var(--pg-muted, #a7a3c9)
+      line-height: 1.4
+
+    .group > .title
+      padding: 8px 4px 3px
+      color: var(--pg-muted, #a7a3c9)
+      font-size: 10px
+      letter-spacing: 0.1em
+      text-transform: uppercase
+
+    .group[data-group="favourites"] > .title
+      color: var(--pg-violet-ink, #cfa8ff)
+
+    .folder
+      width: 100%
+      box-sizing: border-box
+      display: flex
+      align-items: center
+      gap: 5px
+      min-height: 24px
+      padding: 0 4px
+      border: none
+      border-radius: 6px
+      background: transparent
+      text-align: left
+      color: var(--pg-muted, #a7a3c9)
+
+      &:hover
+        background: var(--pg-panel-2, #12163a)
+        color: var(--pg-fg, #efeaff)
+
+      > .chevron
+        flex: 0 0 auto
+        font-size: 9px
+        transition: transform 80ms
+
+      &.open > .chevron
+        transform: rotate(90deg)
+
+      > .label
+        min-width: 0
+        overflow: hidden
+        text-overflow: ellipsis
+        white-space: nowrap
+
+    .item
+      display: flex
+      align-items: center
+      gap: 2px
+      min-height: 26px
+      border-radius: 6px
+      touch-action: none
+
+      &:hover
+        background: var(--pg-panel-2, #12163a)
+
+      > button
+        border: none
+        background: transparent
+
+      > .heart, > .add
+        flex: 0 0 22px
+        height: 22px
+        padding: 0
+        border-radius: 6px
+        color: var(--pg-muted, #a7a3c9)
+        line-height: 1
+
+        &:hover
+          color: var(--pg-fg, #efeaff)
+          background: #ffffff14
+
+      > .heart.on
+        color: var(--pg-rec, #fd5e7f)
+
+      > .pick
+        flex: 1
+        min-width: 0
+        display: flex
+        flex-direction: column
+        justify-content: center
+        padding: 2px 4px
+        border-radius: 6px
+        text-align: left
+
+        > .name, > .hint
+          overflow: hidden
+          text-overflow: ellipsis
+          white-space: nowrap
+
+        > .hint
+          color: var(--pg-muted, #a7a3c9)
+          font-size: 10px

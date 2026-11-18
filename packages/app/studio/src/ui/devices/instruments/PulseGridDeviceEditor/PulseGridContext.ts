@@ -7,6 +7,7 @@ import {
 } from "@opendaw/studio-adapters"
 import {PulseGridEffects} from "@opendaw/studio-core"
 import {StudioService} from "@/service/StudioService"
+import {PulseGridSounds} from "./PulseGridSounds"
 
 // The one door between the PulseGrid screen and the project.
 //
@@ -64,6 +65,7 @@ export namespace PulseGridContext {
     export const create = (lifecycle: Lifecycle, service: StudioService, composite: InstrumentCompositeBox): PulseGridContext => {
         const {project: {editing, boxGraph}} = service
         const effects = PulseGridEffects.maker(boxGraph)
+        PulseGridSounds.load() // the Tubular voices by name need the cartridges, so they start now
         const read = (): Optional<PulseGridDoc> => {
             if (!composite.isAttached()) {return undefined}
             try {
@@ -111,7 +113,7 @@ export namespace PulseGridContext {
             service, composite, effects, doc, selectedLane, notice, flash, tool, openLanes, picked,
             send: (ops, mark = true) => {
                 if (ops.length === 0) {return []}
-                const results = editing.modify(() => PulseGridOps.apply(composite, ops, {effects}), mark).unwrapOrElse(() => [])
+                const results = editing.modify(() => PulseGridOps.apply(composite, ops, {effects, voices: PulseGridSounds.voices}), mark).unwrapOrElse(() => [])
                 const refused = results.find(result => !result.ok)
                 if (refused !== undefined && !refused.ok) {notice.setValue({kind: "error", text: refused.error})}
                 refresh()

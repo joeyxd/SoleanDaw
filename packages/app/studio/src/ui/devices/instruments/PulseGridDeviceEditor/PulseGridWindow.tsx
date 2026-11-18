@@ -10,6 +10,7 @@ import {PulseGridTopBar} from "./PulseGridTopBar"
 import {PulseGridSceneBar} from "./PulseGridSceneBar"
 import {PulseGridLanes} from "./PulseGridLanes"
 import {PulseGridScenes} from "./PulseGridScenes"
+import {PulseGridBrowser} from "./PulseGridBrowser"
 import {PulseGridBottomBar} from "./PulseGridBottomBar"
 import {PulseGridPanel} from "./PulseGridPanel"
 
@@ -53,7 +54,10 @@ export const PulseGridWindow = ({lifecycle, context}: Construct): HTMLElement =>
             <PulseGridSceneBar lifecycle={lifecycle} context={context}/>
             {emptySong}
             <div className="main">
-                <PulseGridScenes lifecycle={lifecycle} context={context}/>
+                <div className="side">
+                    <PulseGridScenes lifecycle={lifecycle} context={context}/>
+                    <PulseGridBrowser lifecycle={lifecycle} context={context}/>
+                </div>
                 <div className="lanes"><PulseGridLanes lifecycle={lifecycle} context={context}/></div>
                 <PulseGridPanel lifecycle={lifecycle} context={context}/>
             </div>

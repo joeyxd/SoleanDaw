@@ -116,6 +116,11 @@ component
     &.lifting
       opacity: 0.45
 
+    // a sound dragged from the browser would land on this lane
+    &.target
+      outline: 2px dashed var(--pg-violet-ink, #cfa8ff)
+      outline-offset: 2px
+
     &.quiet
       > .head > .led
         opacity: 0.35

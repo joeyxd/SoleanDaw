@@ -5,6 +5,7 @@ import {PulseGridAnswer, PulseGridDevice, PulseGridDocs, PulseGridRequests} from
 import {PulseGridEffects} from "@opendaw/studio-core"
 import type {StudioService} from "@/service/StudioService"
 import {PulseGridContext} from "./PulseGridContext"
+import {PulseGridSounds} from "./PulseGridSounds"
 
 // What an agent asks of a PulseGrid in this open project, run on the live project (docs: AGENT_WIRE.md section 2).
 // NitroBridge fetches the entries and posts the answers; this runs one and tells the screen.
@@ -41,9 +42,10 @@ export namespace PulseGridAgentInbox {
     // The pure part: runs the request and reports what changed. Never throws; an error that is not a refusal
     // answers ok false and is logged.
     export const attempt = (graph: BoxGraph, editing: Editing, request: unknown): PulseGridAttempt => {
+        PulseGridSounds.load() // the voices by name come from the loaded cartridges; this is the first request's start
         try {
             const before = new Map(PulseGridRequests.tracks(graph).map(({id, composite}) => [id, lanesOf(composite)]))
-            const answer = PulseGridRequests.handle(graph, editing as BoxEditing, request, {effects: PulseGridEffects.maker(graph)}) // the handler only uses `modify`
+            const answer = PulseGridRequests.handle(graph, editing as BoxEditing, request, {effects: PulseGridEffects.maker(graph), voices: PulseGridSounds.voices}) // the handler only uses `modify`
             const id = answer.track?.id
             const track = id === undefined ? undefined : PulseGridRequests.tracks(graph).find(track => track.id === id)
             if (track === undefined) {return {answer, composite: undefined, changed: []}}
