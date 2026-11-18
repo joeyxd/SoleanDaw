@@ -1,6 +1,7 @@
-import {BoxEditing} from "@opendaw/lib-box"
+import {BooleanField, Box, BoxEditing, Int32Field, IndexedBox} from "@opendaw/lib-box"
 import {int} from "@opendaw/lib-std"
 import {InstrumentCompositeBox} from "@opendaw/studio-boxes"
+import {DeviceBoxUtils} from "../DeviceBox"
 import {PulseGridDevice, PulseGridLane} from "./PulseGridDevice"
 import {PulseGridFactory} from "./PulseGridFactory"
 import {PulseGridDocs} from "./PulseGridDocs"
@@ -90,6 +91,15 @@ const patternAnswer = (device: PulseGridDevice, lanes: ReadonlyArray<PulseGridLa
 }
 const laneAnswer = (device: PulseGridDevice, lane: PulseGridLane): Answer =>
     doc => [PulseGridText.formatLane(doc.lanes[device.lanes.indexOf(lane)])]
+
+const laneSounds = (device: PulseGridDevice, lane: PulseGridLane): Answer =>
+    doc => PulseGridText.formatSounds(doc.lanes[device.lanes.indexOf(lane)])
+// Effect `position` (1..n) of the lane's chain.
+const effectOf = (lane: PulseGridLane, position: unknown): Box => {
+    const effects = PulseGridDocs.effectBoxes(lane)
+    if (effects.length === 0) {fail(`lane "${lane.device.label.getValue()}" has no effects`)}
+    return effects[integer("effect", position, 1, effects.length) - 1]
+}
 
 // What a scene holds, read before anything moves: the four patterns of every lane, its name and its flag.
 type SceneData = {
@@ -541,13 +551,78 @@ const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes, env: 
             writes.push(() => PulseGridSongRegions.append(device, entry))
             return doc => [PulseGridText.formatSong(doc)]
         }
-        case "setParam":
-        case "addEffect":
-        case "removeEffect":
+        case "setParam": {
+            const lane = laneOf(device, op.lane)
+            const owner = op.effect === undefined ? undefined : effectOf(lane, op.effect)
+            const box = owner ?? lane.instrument.unwrapOrUndefined()
+            const name = string("param", op.param)
+            if (box === undefined) {fail(`lane "${lane.device.label.getValue()}" has no instrument; add one with setLaneSound`)}
+            const fields = PulseGridDocs.paramFields(box!)
+            const squash = (text: string): string => text.toLowerCase().replace(/[-_ ]/g, "")
+            const field = fields.find(f => f.fieldName === name) ?? fields.find(f => squash(f.fieldName) === squash(name))
+            if (field === undefined) {
+                fail(`No such parameter "${name}" on ${box!.name.replace(/(?:DeviceBox|Box)$/, "")}; allowed parameters: ${
+                    fields.map(f => f.fieldName).join(", ")}`)
+            }
+            const target = field!
+            if (target instanceof BooleanField) {
+                const value = boolean("value", op.value)
+                writes.push(() => target.setValue(value))
+            } else {
+                const {min = -Infinity, max = Infinity} = PulseGridDocs.rangeOf(target)
+                const value = op.value
+                const kind = target instanceof Int32Field ? "an integer" : "a number"
+                if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max ||
+                    (target instanceof Int32Field && !Number.isInteger(value))) {
+                    fail(`${target.fieldName} ${String(value)} is not allowed: expected ${kind}${
+                        min === -Infinity && max === Infinity ? "" : ` ${min}..${max}`}${target.unit}`)
+                }
+                writes.push(() => target.setValue(value as number))
+            }
+            return laneSounds(device, lane)
+        }
+        case "addEffect": {
+            const lane = laneOf(device, op.lane)
+            const maker = env.effects
+            if (maker === undefined) {fail("addEffect is not available: the host passed no effect maker")}
+            const name = string("effect", op.effect)
+            if (!maker!.names.includes(name)) {
+                fail(`effect ${name} is not allowed: expected one of ${maker!.names.join(", ")}`)
+            }
+            const count = PulseGridDocs.effectBoxes(lane).length
+            const at = op.at === undefined ? count + 1 : integer("at", op.at, 1, count + 1)
+            writes.push(() => maker!.create(name, lane.cell.audioEffects, at - 1))
+            return laneSounds(device, lane)
+        }
+        case "removeEffect": {
+            const lane = laneOf(device, op.lane)
+            const box = effectOf(lane, op.effect)
+            // The same as Devices.deleteEffectDevices (DeviceAdapter.ts): close the gap, then delete the box.
+            writes.push(() => {
+                PulseGridDocs.effectBoxes(lane).filter(other => other !== box)
+                    .forEach((other, index) => DeviceBoxUtils.lookupIndexField(other).setValue(index))
+                box.delete()
+            })
+            return laneSounds(device, lane)
+        }
         case "setEffect": {
-            // T-1118 contract stub: SPEC.md section 10 says what each does. `env` carries the effect maker.
-            void env
-            return fail(`${op.op} is not built yet`)
+            const lane = laneOf(device, op.lane)
+            const box = effectOf(lane, op.effect)
+            if (op.enabled === undefined && op.to === undefined) {
+                fail("setEffect needs enabled or to: expected at least one of them")
+            }
+            if (op.enabled !== undefined) {
+                const enabled = boolean("enabled", op.enabled)
+                writes.push(() => DeviceBoxUtils.lookupEnabledField(box).setValue(enabled))
+            }
+            if (op.to !== undefined) {
+                const to = integer("to", op.to, 1, PulseGridDocs.effectBoxes(lane).length)
+                writes.push(() => {
+                    const from = PulseGridDocs.effectBoxes(lane).indexOf(box)
+                    if (from !== to - 1) {IndexedBox.moveIndices(lane.cell.audioEffects, [from], to > from + 1 ? to : to - 1)}
+                })
+            }
+            return laneSounds(device, lane)
         }
         default: {
             // Proven exhaustive for typed callers; an agent's raw JSON can still get here.

@@ -79,7 +79,7 @@ describe("PulseGridFactory", () => {
             expect(lane.device.grid.targetVertex.unwrap().box).toBe(device.head)
             if (spec.sound.instrument === "Nano") {
                 expect(doc.lanes[index].sound).toEqual({instrument: "Nano", label: spec.sound.sample.name,
-                    sample: {uuid: spec.sound.sample.uuid, name: spec.sound.sample.name}})
+                    sample: {uuid: spec.sound.sample.uuid, name: spec.sound.sample.name}, params: expect.any(Array)})
                 const nano = lane.instrument.unwrap() as NanoDeviceBox
                 expect(nano.rootKey.getValue()).toBe(60)
                 expect((nano.file.targetVertex.unwrap().box as AudioFileBox).endInSeconds.getValue())

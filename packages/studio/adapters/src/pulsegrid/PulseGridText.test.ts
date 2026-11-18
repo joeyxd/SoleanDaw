@@ -106,7 +106,7 @@ const makeLane = (index: number, name: string, kind: "drum" | "melodic", pitch: 
                  patterns: PulseGridLaneDoc["patterns"] = []): PulseGridLaneDoc => ({
     index, id: `lane-${index}`, name, kind, group: kind === "drum" ? 0 : 1, hue: index, pitch,
     probability: 100, humanize: 0, accent: true, armed: false, enabled: true, seed: index,
-    sound: {instrument: "Nano", label: name}, effects: [], mix: {gain: 0, pan: 0, mute: false, solo: false}, patterns
+    sound: {instrument: "Nano", label: name, params: []}, effects: [], chain: [], mix: {gain: 0, pan: 0, mute: false, solo: false}, patterns
 })
 
 describe("PulseGridText whole document", () => {
@@ -153,6 +153,7 @@ describe("PulseGridText whole document", () => {
             "  1 kick drum C1 Nano \"kick\" gain 0 pan 0",
             "  2 hat drum F#1 Nano \"hat\" gain 0 pan 0",
             "  3 marimba melodic C3 Nano \"marimba\" gain 0 pan 0",
+            "sounds", "  1 kick Nano", "  2 hat Nano", "  3 marimba Nano",
             "scene 1 A", " kick |x--- x--- x--- x---|", "scene 1 B", " hat |x-x- ---- ---- ----|",
             "scene 2 A", " marimba: 5:E3"
         ].join("\n").replace(/ +/g, " "))
@@ -171,7 +172,7 @@ describe("PulseGridText whole document", () => {
             {op: "setPatternText", lane: "hat", scene: 1, variation: "B", text: "hat |x-x- ---- ---- ----|"},
             {op: "setPatternText", lane: "marimba", scene: 2, variation: "A", text: "marimba: 5:E3"}
         ])
-        expect(PulseGridText.parseText(`${text}\nstrange thing`).errors).toEqual(["line 15: unknown line strange thing"])
+        expect(PulseGridText.parseText(`${text}\nstrange thing`).errors).toEqual(["line 19: unknown line strange thing"])
     })
 
     it("reads a part of the text: some settings, scenes with any spacing, one block", () => {

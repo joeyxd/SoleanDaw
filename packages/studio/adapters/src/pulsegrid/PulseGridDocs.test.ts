@@ -94,13 +94,17 @@ describe("PulseGridDocs", () => {
                     hue: 120, pitch: 36, probability: 80, humanize: 12.35, accent: false, armed: true,
                     enabled: false, seed: 42,
                     sound: {instrument: "Nano", label: "Kick 808",
-                        sample: {uuid: UUID.toString(sample.address.uuid), name: "Kick 808.wav"}},
-                    effects: ["Delay", "Reverb"], mix: {gain: -3, pan: -50, mute: true, solo: true},
+                        sample: {uuid: UUID.toString(sample.address.uuid), name: "Kick 808.wav"},
+                        params: expect.any(Array)},
+                    effects: ["Delay", "Reverb"],
+                    chain: [{index: 1, name: "Delay", label: "", enabled: true, params: expect.any(Array)},
+                        {index: 2, name: "Reverb", label: "", enabled: true, params: expect.any(Array)}],
+                    mix: {gain: -3, pan: -50, mute: true, solo: true},
                     patterns: [{scene: 1, variation: "A", length: 8, notes: []},
                         {scene: 2, variation: "B", length: 0, notes: [note]}]},
                 {index: 2, id: UUID.toString(lanes[1].address.uuid), name: "Empty", kind: "drum", group: 0,
                     hue: 0, pitch: 60, probability: 100, humanize: 0, accent: true, armed: false,
-                    enabled: true, seed: 0, sound: null, effects: [],
+                    enabled: true, seed: 0, sound: null, effects: [], chain: [],
                     mix: {gain: -3, pan: -50, mute: true, solo: true}, patterns: []}
             ]
         })

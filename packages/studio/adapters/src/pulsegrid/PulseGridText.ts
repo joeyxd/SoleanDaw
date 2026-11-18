@@ -2,7 +2,7 @@ import {int} from "@opendaw/lib-std"
 import {MidiKeys} from "@opendaw/lib-dsp"
 import {PulseGridScales} from "./PulseGridScales"
 import {
-    PulseGridDoc, PulseGridError, PulseGridLaneDoc, PulseGridNote, PulseGridOp, PulseGridSongEntryInput,
+    PulseGridDoc, PulseGridError, PulseGridLaneDoc, PulseGridNote, PulseGridOp, PulseGridParamDoc, PulseGridSongEntryInput,
     PulseGridVariation
 } from "./PulseGridTypes"
 
@@ -301,12 +301,36 @@ export namespace PulseGridText {
         return pieces.join("  ")
     }
 
+    // A number with at most 3 decimals, no trailing zeros, never -0.
+    const shortNumber = (value: number): string => String(Math.round(value * 1000) / 1000 + 0)
+
+    // `root-key 60`, `tune 0ct`, `loop off`: the field name in kebab case, the unit glued to the value.
+    export const formatParam = (param: PulseGridParamDoc): string => {
+        const name = param.name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase()
+        if (typeof param.value === "boolean") {return `${name} ${param.value ? "on" : "off"}`}
+        return `${name} ${param.type === "int" ? param.value : shortNumber(param.value)}${param.unit}`
+    }
+
+    // The lane's lines of the `sounds` block: the instrument, then one line per effect (SPEC.md section 10).
+    export const formatSounds = (lane: PulseGridLaneDoc): Array<string> => {
+        const who = `${lane.index} ${quoteName(lane.name)}`
+        const lines = lane.sound === null ? []
+            : [[who, lane.sound.instrument, ...lane.sound.params.map(formatParam)].join("  ")]
+        for (const effect of lane.chain) {
+            lines.push([who, `fx ${effect.index} ${effect.name}`, ...(effect.enabled ? [] : ["off"]),
+                ...effect.params.map(formatParam)].join("  "))
+        }
+        return lines
+    }
+
     export const toText = (doc: PulseGridDoc): string => {
         const lines = [`PulseGrid ${quoted(doc.name)}`, formatSettings(doc), formatPlaying(doc)]
         const scenes = formatScenes(doc)
         if (scenes) lines.push(scenes)
         if (doc.song.on || doc.song.entries.length > 0) lines.push(formatSong(doc))
         lines.push("lanes", ...doc.lanes.map(lane => `  ${formatLane(lane)}`))
+        const sounds = doc.lanes.flatMap(formatSounds)
+        if (sounds.length > 0) lines.push("sounds", ...sounds.map(line => `  ${line}`))
         const slotKeys = new Set<string>([`${doc.scene}:${doc.variation}`])
         doc.lanes.forEach(lane => lane.patterns.forEach(pattern => slotKeys.add(`${pattern.scene}:${pattern.variation}`)))
         const slots = [...slotKeys].map(key => {
@@ -341,7 +365,7 @@ export namespace PulseGridText {
             if (!line) return
             const report = (message: string) => errors.push(`line ${lineNumber}: ${message}`)
             try {
-                if (line === "lanes") {inLanes = true; slot = null; return}
+                if (line === "lanes" || line === "sounds") {inLanes = true; slot = null; return}
                 const sceneHeader = /^scene\s+(\d+)\s+([A-D])$/.exec(line)
                 if (sceneHeader) {
                     slot = {scene: parseInteger(sceneHeader[1], "scene", 1, 16), variation: sceneHeader[2] as PulseGridVariation}

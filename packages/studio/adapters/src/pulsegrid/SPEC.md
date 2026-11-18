@@ -445,8 +445,8 @@ Written after the `lanes` block, read only like it (`parseText` skips it). One l
 then one line per effect of that lane:
 
     sounds
-    1 Kick  Nano  volume 0dB  octave 0  tune 0ct  root-key 60  release 0.2s  attack 0.001s  ...
-    1 Kick  fx 1 Crusher  crush 0.5  bits 8  boost 0dB  mix 1
+    1 Kick  Nano  volume -3dB  octave 0oct  tune 0ct  root-key 60  release 0.1s  attack 0.003s  ...
+    1 Kick  fx 1 Crusher  crush 0.5%  bits 8bits  boost 0dB  mix 1%
     1 Kick  fx 2 Delay  off  ...
 
 Pieces are separated by two spaces. A parameter is `name value`, the field's unit appended without a space when

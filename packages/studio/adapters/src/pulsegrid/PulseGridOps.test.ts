@@ -523,7 +523,7 @@ describe("PulseGridOps", () => {
         expect(read().lanes[0].name).toBe("Tom")
         expect(f.apply({op: "setLaneSound", lane: "Tom", sound: {instrument: "Tubular", label: "New FM"}}))
             .toEqual([success("setLaneSound", PulseGridText.formatLane(read().lanes[0]))])
-        expect(read().lanes[0].sound).toEqual({instrument: "Tubular", label: "New FM"})
+        expect(read().lanes[0].sound).toEqual({instrument: "Tubular", label: "New FM", params: expect.any(Array)})
         expect(f.apply({op: "removeLane", lane: "Tom"}, {op: "setStep", lane: 1, step: 2}))
             .toEqual([success("removeLane"), success("setStep", "kick |-x-- ---- ---- ----|")])
         expect(read().lanes.map(lane => lane.name)).toEqual(["kick", "hat", "marimba"])

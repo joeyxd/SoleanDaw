@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest"
+import {BoxGraph, IndexedBox} from "@opendaw/lib-box"
 import {UUID} from "@opendaw/lib-std"
-import {AudioUnitBox} from "@opendaw/studio-boxes"
+import {AudioUnitBox, CrusherDeviceBox} from "@opendaw/studio-boxes"
 import {ProjectSkeleton} from "../project/ProjectSkeleton"
 import {InstrumentFactories} from "../factories/InstrumentFactories"
 import {IconSymbol} from "@opendaw/studio-enums"
@@ -10,7 +11,19 @@ import {PulseGridDocs} from "./PulseGridDocs"
 import {PulseGridKits} from "./PulseGridKits"
 import {PulseGridOps} from "./PulseGridOps"
 import {PulseGridText} from "./PulseGridText"
-import {PulseGridDoc, PulseGridNote, PulseGridOp, PulseGridOpName} from "./PulseGridTypes"
+import {PulseGridDoc, PulseGridEffectMaker, PulseGridNote, PulseGridOp, PulseGridOpName} from "./PulseGridTypes"
+
+// The effect maker of a host, made small: one effect, built the way studio-core's maker builds its own.
+const effectMaker = (graph: BoxGraph): PulseGridEffectMaker => ({
+    names: ["Crusher"],
+    create: (name, host, index) => {
+        CrusherDeviceBox.create(graph, UUID.generate(), box => {
+            box.label.setValue(name)
+            box.index.setValue(IndexedBox.insertOrder(host, index))
+            box.host.refer(host)
+        })
+    }
+})
 
 // A PulseGrid as the editor makes one: the instrument factory with its default kit.
 const fixture = () => {
@@ -27,7 +40,7 @@ const fixture = () => {
     const read = () => PulseGridDocs.read(PulseGridDevice.find(composite).unwrap())
     const apply = (ops: ReadonlyArray<PulseGridOp>) => {
         graph.beginTransaction()
-        try {return PulseGridOps.apply(composite, ops)} finally {graph.endTransaction()}
+        try {return PulseGridOps.apply(composite, ops, {effects: effectMaker(graph)})} finally {graph.endTransaction()}
     }
     const ok = (ops: ReadonlyArray<PulseGridOp>) => {
         const results = apply(ops)
@@ -47,6 +60,7 @@ const cowbell = {uuid: "83cfb3ec-f361-42dc-af1d-766f2bb0100d", name: "TR-707 Cow
 // Every action of the screen, the ops it must send, and one real call. A new action does not compile until it
 // is listed here.
 // `setup` is applied first, for an action that needs more than a new PulseGrid (two scenes to remove one).
+const crusher: PulseGridOp = {op: "addEffect", lane: "Kick", effect: "Crusher"}
 type Case = {
     ops: ReadonlyArray<PulseGridOpName>, call: (doc: PulseGridDoc, lane: string) => Array<PulseGridOp>,
     setup?: ReadonlyArray<PulseGridOp>
@@ -85,6 +99,16 @@ const cases: Record<keyof typeof PulseGridActions, Case> = {
     moveLane: {ops: ["moveLane"], call: (_, lane) => PulseGridActions.moveLane(lane, 3)},
     removeLane: {ops: ["removeLane"], call: (_, lane) => PulseGridActions.removeLane(lane)},
     clearLane: {ops: ["clear"], call: (_, lane) => PulseGridActions.clearLane(lane)},
+    setVolume: {ops: ["setLaneMix"], call: (_, lane) => PulseGridActions.setVolume(lane, -6)},
+    setPan: {ops: ["setLaneMix"], call: (_, lane) => PulseGridActions.setPan(lane, 25)},
+    setLaneChance: {ops: ["setLane"], call: (_, lane) => PulseGridActions.setLaneChance(lane, 80)},
+    setLaneHumanize: {ops: ["setLane"], call: (_, lane) => PulseGridActions.setLaneHumanize(lane, 10)},
+    setLaneAccent: {ops: ["setLane"], call: (_, lane) => PulseGridActions.setLaneAccent(lane, false)},
+    setParam: {ops: ["setParam"], call: (_, lane) => PulseGridActions.setParam(lane, "volume", -6)},
+    addEffect: {ops: ["addEffect"], call: (_, lane) => PulseGridActions.addEffect(lane, "Crusher")},
+    removeEffect: {ops: ["removeEffect"], setup: [crusher, crusher], call: (_, lane) => PulseGridActions.removeEffect(lane, 2)},
+    switchEffect: {ops: ["setEffect"], setup: [crusher], call: (_, lane) => PulseGridActions.switchEffect(lane, 1, false)},
+    moveEffect: {ops: ["setEffect"], setup: [crusher, crusher], call: (_, lane) => PulseGridActions.moveEffect(lane, 1, 2)},
     shiftLane: {ops: ["rotate"], call: (_, lane) => PulseGridActions.shiftLane(lane, -1)},
     setLaneSound: {ops: ["setLaneSound"], call: (_, lane) => PulseGridActions.setLaneSound(lane, sample)},
     addDrumLane: {ops: ["addLane"], call: doc => PulseGridActions.addDrumLane(doc, cowbell)},
@@ -339,7 +363,8 @@ describe("PulseGridKits", () => {
         const f = fixture()
         f.ok(PulseGridActions.loadKit(f.read(), kit))
         expect(f.lane("Kick").sound).toEqual({
-            instrument: "Nano", label: kit.sounds.Kick.name, sample: {uuid: kit.sounds.Kick.uuid, name: kit.sounds.Kick.name}
+            instrument: "Nano", label: kit.sounds.Kick.name, sample: {uuid: kit.sounds.Kick.uuid, name: kit.sounds.Kick.name},
+            params: expect.any(Array)
         })
     })
 
