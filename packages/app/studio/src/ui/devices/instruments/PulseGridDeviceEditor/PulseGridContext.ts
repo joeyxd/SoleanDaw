@@ -2,9 +2,10 @@ import {DefaultObservableValue, Lifecycle, MutableObservableValue, ObservableVal
 import {deferNextFrame} from "@opendaw/lib-dom"
 import {InstrumentCompositeBox} from "@opendaw/studio-boxes"
 import {
-    PulseGridDevice, PulseGridDoc, PulseGridDocs, PulseGridError, PulseGridNoteKey, PulseGridOp, PulseGridOpResult,
-    PulseGridOps
+    PulseGridDevice, PulseGridDoc, PulseGridDocs, PulseGridEffectMaker, PulseGridError, PulseGridNoteKey, PulseGridOp,
+    PulseGridOpResult, PulseGridOps
 } from "@opendaw/studio-adapters"
+import {PulseGridEffects} from "@opendaw/studio-core"
 import {StudioService} from "@/service/StudioService"
 
 // The one door between the PulseGrid screen and the project.
@@ -27,6 +28,8 @@ export type PulseGridPicked = {lane: string, notes: ReadonlyArray<PulseGridNoteK
 export type PulseGridContext = {
     readonly service: StudioService
     readonly composite: InstrumentCompositeBox
+    // the audio effects an op may add (SPEC.md section 10), the same maker the agent inbox hands to its requests
+    readonly effects: PulseGridEffectMaker
     readonly doc: ObservableValue<PulseGridDoc>
     // the lane the person works on (its id), for the highlight now and the instrument panel later
     readonly selectedLane: MutableObservableValue<Optional<string>>
@@ -60,6 +63,7 @@ export namespace PulseGridContext {
 
     export const create = (lifecycle: Lifecycle, service: StudioService, composite: InstrumentCompositeBox): PulseGridContext => {
         const {project: {editing, boxGraph}} = service
+        const effects = PulseGridEffects.maker(boxGraph)
         const read = (): Optional<PulseGridDoc> => {
             if (!composite.isAttached()) {return undefined}
             try {
@@ -104,10 +108,10 @@ export namespace PulseGridContext {
         const deferred = lifecycle.own(deferNextFrame(refresh))
         lifecycle.own(boxGraph.subscribeToAllUpdates({onUpdate: () => deferred.request()}))
         const context: PulseGridContext = {
-            service, composite, doc, selectedLane, notice, flash, tool, openLanes, picked,
+            service, composite, effects, doc, selectedLane, notice, flash, tool, openLanes, picked,
             send: (ops, mark = true) => {
                 if (ops.length === 0) {return []}
-                const results = editing.modify(() => PulseGridOps.apply(composite, ops), mark).unwrapOrElse(() => [])
+                const results = editing.modify(() => PulseGridOps.apply(composite, ops, {effects}), mark).unwrapOrElse(() => [])
                 const refused = results.find(result => !result.ok)
                 if (refused !== undefined && !refused.ok) {notice.setValue({kind: "error", text: refused.error})}
                 refresh()

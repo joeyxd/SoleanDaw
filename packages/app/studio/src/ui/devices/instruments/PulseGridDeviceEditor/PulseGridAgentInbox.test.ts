@@ -7,6 +7,11 @@ import {
 import {PulseGridDevice, PulseGridDocs, PulseGridRequests, ProjectSkeleton} from "@opendaw/studio-adapters"
 import {PulseGridAgentInbox} from "./PulseGridAgentInbox"
 
+// the inbox imports studio-core (the effect maker), whose engine file extends AudioWorkletNode
+vi.hoisted(() => {
+    if (Reflect.get(globalThis, "AudioWorkletNode") === undefined) {Reflect.set(globalThis, "AudioWorkletNode", class {})}
+})
+
 const fixture = () => {
     const {boxGraph: graph, mandatoryBoxes: {rootBox, primaryAudioBusBox}} =
         ProjectSkeleton.empty({createDefaultUser: false, createOutputMaximizer: false})

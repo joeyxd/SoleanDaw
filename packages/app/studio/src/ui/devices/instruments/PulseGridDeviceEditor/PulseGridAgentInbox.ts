@@ -2,6 +2,7 @@ import {BoxEditing, BoxGraph} from "@opendaw/lib-box"
 import {Editing, Optional} from "@opendaw/lib-std"
 import {InstrumentCompositeBox} from "@opendaw/studio-boxes"
 import {PulseGridAnswer, PulseGridDevice, PulseGridDocs, PulseGridRequests} from "@opendaw/studio-adapters"
+import {PulseGridEffects} from "@opendaw/studio-core"
 import type {StudioService} from "@/service/StudioService"
 import {PulseGridContext} from "./PulseGridContext"
 
@@ -42,7 +43,7 @@ export namespace PulseGridAgentInbox {
     export const attempt = (graph: BoxGraph, editing: Editing, request: unknown): PulseGridAttempt => {
         try {
             const before = new Map(PulseGridRequests.tracks(graph).map(({id, composite}) => [id, lanesOf(composite)]))
-            const answer = PulseGridRequests.handle(graph, editing as BoxEditing, request) // the handler only uses `modify`
+            const answer = PulseGridRequests.handle(graph, editing as BoxEditing, request, {effects: PulseGridEffects.maker(graph)}) // the handler only uses `modify`
             const id = answer.track?.id
             const track = id === undefined ? undefined : PulseGridRequests.tracks(graph).find(track => track.id === id)
             if (track === undefined) {return {answer, composite: undefined, changed: []}}
