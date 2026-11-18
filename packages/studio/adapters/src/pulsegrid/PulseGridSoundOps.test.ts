@@ -1,16 +1,20 @@
 import {describe, expect, it} from "vitest"
+import {readFileSync} from "node:fs"
+import {fileURLToPath} from "node:url"
 import {BoxGraph, IndexedBox} from "@opendaw/lib-box"
 import {UUID} from "@opendaw/lib-std"
 import {
     AudioUnitBox, CrusherDeviceBox, DelayDeviceBox, InstrumentCompositeBox, InstrumentCompositeCellBox, NanoDeviceBox,
     PulseGridBox, PulseGridLaneDeviceBox, TubularDeviceBox, VaporisateurDeviceBox
 } from "@opendaw/studio-boxes"
+import {Dx7Sysex} from "../devices/instruments/Tubular/Dx7Sysex"
 import {ProjectSkeleton} from "../project/ProjectSkeleton"
+import {PulseGridCatalog} from "./PulseGridCatalog"
 import {PulseGridDevice} from "./PulseGridDevice"
 import {PulseGridDocs} from "./PulseGridDocs"
 import {PulseGridOps} from "./PulseGridOps"
 import {PulseGridText} from "./PulseGridText"
-import {PulseGridEffectMaker, PulseGridOp, PulseGridOpResult} from "./PulseGridTypes"
+import {PulseGridCartridge, PulseGridEffectMaker, PulseGridOp, PulseGridOpResult, PulseGridOpsEnv} from "./PulseGridTypes"
 
 // The maker of a host, made small: two effects, built the way studio-core's maker builds its own (label, host,
 // index through IndexedBox.insertOrder, which shifts the effects after it).
@@ -56,7 +60,7 @@ const fixture = () => {
     })
     graph.endTransaction()
     const read = () => PulseGridDocs.read(PulseGridDevice.find(composite).unwrap())
-    const run = (env: {effects?: PulseGridEffectMaker}, ops: ReadonlyArray<PulseGridOp>) => {
+    const run = (env: PulseGridOpsEnv, ops: ReadonlyArray<PulseGridOp>) => {
         graph.beginTransaction()
         try {return PulseGridOps.apply(composite, ops, env)} finally {graph.endTransaction()}
     }
@@ -288,5 +292,100 @@ describe("PulseGrid sounds: text", () => {
         f.nano.delete()
         f.graph.endTransaction()
         expect(PulseGridText.toText(f.read())).not.toContain("sounds")
+    })
+})
+
+// Two real cartridges of the app: the Tubular Classics and SynprezFM 24 (the home of Xylophone3).
+const book: ReadonlyArray<PulseGridCartridge> = ["Tubular Classics", "SynprezFM 24"].map(name => {
+    const root = fileURLToPath(new URL("../../../../app/studio/public/tubular/cartridges/", import.meta.url))
+    const file = name === "Tubular Classics" ? "Tubular_Classics.syx" : "SynprezFM_24.syx"
+    return {name, voices: Dx7Sysex.decode(new Uint8Array(readFileSync(root + file)))}
+})
+
+describe("PulseGrid sounds: Tubular voices by name", () => {
+    const byName = (item: string, cartridge?: string) => ({
+        instrument: "Tubular", voice: cartridge === undefined ? {name: item} : {name: item, cartridge}
+    } as const)
+    const done = (f: ReturnType<typeof fixture>, ...ops: ReadonlyArray<PulseGridOp>) => {
+        const results = f.run({voices: () => book}, ops)
+        expect(results.filter(result => !result.ok)).toEqual([])
+        expect(results.length).toBe(ops.length)
+    }
+    const picked = (name: string) => PulseGridCatalog.sound(PulseGridCatalog.items(undefined, book).find(item => item.name === name)!)
+
+    it("setLaneSound builds the lane the browser builds, for a shown name and for a name with its cartridge", () => {
+        for (const [asked, shown, cartridge] of [["Vibraphone", "Vibraphone"], ["Vibes", "Vibraphone"],
+            ["xylophone3", "Xylophone", "SynprezFM 24"], ["Xylophone", "Xylophone", "SynprezFM 24"]] as const) {
+            const f = fixture()
+            done(f, {op: "setLaneSound", lane: 1, sound: byName(asked, cartridge)})
+            const named = f.read().lanes[0].sound
+            done(f, {op: "setLaneSound", lane: 1, sound: picked(shown)})
+            expect(named?.instrument).toBe("Tubular")
+            expect(named?.label).toBe(shown)
+            expect(named).toEqual(f.read().lanes[0].sound)
+        }
+        const f = fixture()
+        done(f, {op: "setLaneSound", lane: 1, sound: byName("Vibraphone")})
+        const init = fixture()
+        done(init, {op: "setLaneSound", lane: 1, sound: {instrument: "Tubular"}})
+        expect(f.read().lanes[0].sound?.params).not.toEqual(init.read().lanes[0].sound?.params)
+    })
+
+    it("addLane does the same, a label of the input wins, and a stored name keeps its name as the label", () => {
+        const f = fixture()
+        done(f, {op: "addLane", name: "Mallet", kind: "melodic", sound: byName("Marimba")},
+            {op: "addLane", name: "Mallet 2", kind: "melodic", sound: picked("Marimba")},
+            {op: "addLane", name: "Own", kind: "melodic", sound: {...byName("Rhodes"), label: "Mine"}},
+            {op: "addLane", name: "Stored", kind: "melodic", sound: byName("Rhodes")})
+        const lanes = f.read().lanes
+        expect(lanes.length).toBe(6)
+        expect(lanes[2].sound).toEqual(lanes[3].sound)
+        expect(lanes[4].sound?.label).toBe("Mine")
+        expect(lanes[5].sound?.label).toBe("Rhodes")
+        expect(lanes[5].sound?.params).toEqual(lanes[4].sound?.params)
+    })
+
+    it("works as before for a voice with a patch, without a voice book in the env", () => {
+        const f = fixture()
+        const {voice} = picked("Marimba") as unknown as {voice: {name: string, patch: Array<number>}}
+        let asked = 0
+        const results = f.run({voices: () => {asked++; return []}}, [
+            {op: "setLaneSound", lane: 1, sound: {instrument: "Tubular", voice, label: "Direct"}}])
+        expect(results.map(result => result.ok)).toEqual([true])
+        expect(asked).toBe(0)
+        expect(f.read().lanes[0].sound?.label).toBe("Direct")
+        done(f, {op: "addLane", name: "Plain", kind: "melodic", sound: {instrument: "Tubular", voice}})
+        expect(f.read().lanes[2].sound?.label).toBe("Marimba")
+    })
+
+    it("refuses with its message and changes nothing: no voice book, an empty book, an unknown voice", () => {
+        const f = fixture()
+        const before = f.read()
+        const refuse = (env: PulseGridOpsEnv, op: PulseGridOp) => {
+            const results = f.run(env, [op, {op: "setLane", lane: 1, name: "Never"}])
+            expect(results.length).toBe(1)
+            expect(f.read()).toEqual(before)
+            return refused(results[0])
+        }
+        for (const op of [
+            {op: "setLaneSound", lane: 1, sound: byName("Vibraphone")},
+            {op: "addLane", name: "New", kind: "melodic", sound: byName("Vibraphone")}] as ReadonlyArray<PulseGridOp>) {
+            expect(refuse({}, op)).toBe("this host has no Tubular voices by name; send the voice with its patch")
+            expect(refuse({voices: () => []}, op)).toBe("the Tubular voices are not loaded yet; send the request again")
+        }
+        expect(refuse({voices: () => book}, {op: "setLaneSound", lane: 1, sound: byName("Vibrafone")}))
+            .toBe("voice Vibrafone is not known")
+        expect(refuse({voices: () => book}, {op: "addLane", name: "New", kind: "melodic", sound: byName("Marimba", "Nowhere")}))
+            .toBe("voice Marimba is not known; names that hold a word of it: Marimba")
+        const lead = "voice Big Bass is not known; names that hold a word of it: "
+        const message = refuse({voices: () => book}, {op: "setLaneSound", lane: 1, sound: byName("Big Bass")})
+        expect(message.startsWith(lead)).toBe(true)
+        expect(message.slice(lead.length).split(", ").length).toBe(5)
+    })
+
+    it("passes any other error on: a book that throws is a bug, not a refusal", () => {
+        const f = fixture()
+        expect(() => f.run({voices: () => {throw new Error("boom")}}, [
+            {op: "setLaneSound", lane: 1, sound: byName("Vibraphone")}])).toThrow("boom")
     })
 })

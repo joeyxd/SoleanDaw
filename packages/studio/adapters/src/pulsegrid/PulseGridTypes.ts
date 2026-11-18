@@ -1,6 +1,7 @@
 import type {Field} from "@opendaw/lib-box"
 import {int} from "@opendaw/lib-std"
 import type {EffectPointerType} from "../DeviceAdapter"
+import type {Dx7Voice} from "../devices/instruments/Tubular/Dx7Sysex"
 
 // The contract of the PulseGrid model: the document an agent or the screen reads, and the operations both write
 // with. Rules and the text form are in ./SPEC.md. Everything here is plain JSON, so it travels as is.
@@ -154,8 +155,12 @@ export type PulseGridSlot = {scene?: int, variation?: PulseGridVariation}
 export type PulseGridSoundInput =
     // one audio file in a sampler; duration in seconds; label defaults to the sample's name
     | {instrument: "Nano", sample: {uuid: string, name: string, duration: number}, label?: string}
-    // the FM synth; patch is the 155 bytes of one DX7 voice, left out for the init voice
-    | {instrument: "Tubular", voice?: {name: string, patch: ReadonlyArray<int>}, label?: string}
+    // the FM synth; patch is the 155 bytes of one DX7 voice, left out for the init voice. Without a patch the voice
+    // is named, and PulseGridOps looks it up in the host's voice book (SPEC.md, section 11).
+    | {
+    instrument: "Tubular", label?: string,
+    voice?: {name: string, patch: ReadonlyArray<int>} | {name: string, cartridge?: string, patch?: undefined}
+}
 
 export type PulseGridOp =
     // the head; `scale` takes its number or its id ("natural-minor"), `root` its number or a key name ("F#")
@@ -219,7 +224,13 @@ export type PulseGridEffectMaker = {
     // makes the effect `name` (one of `names`) at chain position `index` (0-based) of the cell's audio chain `host`
     create(name: string, host: Field<EffectPointerType>, index: int): void
 }
-export type PulseGridOpsEnv = {readonly effects?: PulseGridEffectMaker}
+// A DX7 cartridge the host holds: its name and its voices (the app's TubularCartridge fits).
+export type PulseGridCartridge = {readonly name: string, readonly voices: ReadonlyArray<Dx7Voice>}
+// `voices` returns the cartridges the host holds now; without it, a Tubular voice by name is refused.
+export type PulseGridOpsEnv = {
+    readonly effects?: PulseGridEffectMaker
+    readonly voices?: () => ReadonlyArray<PulseGridCartridge>
+}
 
 export type PulseGridOpName = PulseGridOp["op"]
 

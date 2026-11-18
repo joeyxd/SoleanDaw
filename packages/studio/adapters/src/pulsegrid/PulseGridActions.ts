@@ -1,9 +1,11 @@
 import {int, Optional} from "@opendaw/lib-std"
 import {MidiKeys} from "@opendaw/lib-dsp"
+import {PulseGridCatalog, PulseGridCatalogItem} from "./PulseGridCatalog"
 import {PulseGridBeat, PulseGridKit, PulseGridKits, PulseGridSample} from "./PulseGridKits"
 import {PulseGridScales} from "./PulseGridScales"
 import {
-    PulseGridDoc, PulseGridLaneDoc, PulseGridNote, PulseGridNoteKey, PulseGridOp, PulseGridPatternDoc, PulseGridVariation
+    PulseGridDoc, PulseGridLaneDoc, PulseGridNote, PulseGridNoteKey, PulseGridOp, PulseGridPatternDoc,
+    PulseGridSoundInput, PulseGridVariation
 } from "./PulseGridTypes"
 
 // What the screen can do, each as the ops it sends. The screen has no other way to change a PulseGrid: every
@@ -18,6 +20,23 @@ type Ops = Array<PulseGridOp>
 const Variations: ReadonlyArray<PulseGridVariation> = ["A", "B", "C", "D"]
 const NewLaneHues: ReadonlyArray<int> = [181, 300, 36, 60, 77, 150, 210, 265, 330, 15]
 const MachinePrefix = /^(TR-\d+|909|LinnDrum|Linn 9000|DMX|DrumTraks|Drumulator|DDD-1|R-8|RX5|SDSV)\s+/
+
+// `base`, or `base 2`, `base 3` ... when a lane has that name already.
+const freeName = (doc: PulseGridDoc, base: string): string => {
+    const taken = (name: string) => doc.lanes.some(lane => lane.name.toLowerCase() === name.toLowerCase())
+    let name = base
+    for (let count = 2; taken(name); count++) {name = `${base} ${count}`}
+    return name
+}
+// A new drum lane under the last drum lane.
+const newDrumLane = (doc: PulseGridDoc, base: string, sound: PulseGridSoundInput): Ops => {
+    const drums = doc.lanes.filter(lane => lane.kind === "drum")
+    const at = drums.length === 0 ? 1 : drums[drums.length - 1].index + 1
+    return [{
+        op: "addLane", name: freeName(doc, base), kind: "drum", sound,
+        hue: NewLaneHues[drums.length % NewLaneHues.length], at
+    }]
+}
 
 export type PulseGridStep = {velocity: int, chance: int, accent: boolean, notes: int}
 
@@ -235,16 +254,22 @@ export namespace PulseGridActions {
 
     // A new drum lane under the last drum lane, named after the sample without its machine ("TR-808 Cowbell"
     // is "Cowbell"), with a number when that name is taken.
-    export const addDrumLane = (doc: PulseGridDoc, sample: PulseGridSample): Ops => {
-        const base = sample.name.replace(MachinePrefix, "").trim() || sample.name
-        const taken = (name: string) => doc.lanes.some(lane => lane.name.toLowerCase() === name.toLowerCase())
-        let name = base
-        for (let count = 2; taken(name); count++) {name = `${base} ${count}`}
-        const drums = doc.lanes.filter(lane => lane.kind === "drum")
-        const at = drums.length === 0 ? 1 : drums[drums.length - 1].index + 1
+    export const addDrumLane = (doc: PulseGridDoc, sample: PulseGridSample): Ops =>
+        newDrumLane(doc, sample.name.replace(MachinePrefix, "").trim() || sample.name, PulseGridKits.sound(sample))
+
+    // The sound browser (SPEC.md, section 11): a picked sound goes to a lane, or into a new lane.
+    export const loadSound = (lane: string, item: PulseGridCatalogItem): Ops =>
+        [{op: "setLaneSound", lane, sound: PulseGridCatalog.sound(item)}]
+
+    // A drum item lands as a new drum lane does. A melodic item becomes a melodic lane after the last lane, on
+    // pitch 60. The lane is named after the item, with a number when that name is taken.
+    export const addSoundLane = (doc: PulseGridDoc, item: PulseGridCatalogItem): Ops => {
+        const sound = PulseGridCatalog.sound(item)
+        if (item.kind === "drum") {return newDrumLane(doc, item.name, sound)}
+        const melodic = doc.lanes.filter(lane => lane.kind === "melodic")
         return [{
-            op: "addLane", name, kind: "drum", sound: PulseGridKits.sound(sample),
-            hue: NewLaneHues[drums.length % NewLaneHues.length], at
+            op: "addLane", name: freeName(doc, item.name), kind: "melodic", sound, pitch: 60, group: 1,
+            hue: NewLaneHues[melodic.length % NewLaneHues.length], at: doc.lanes.length + 1
         }]
     }
 

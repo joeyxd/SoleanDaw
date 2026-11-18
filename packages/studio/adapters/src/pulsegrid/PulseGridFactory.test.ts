@@ -86,7 +86,7 @@ describe("PulseGridFactory", () => {
                     .toBe(spec.sound.sample.duration)
             } else {
                 expect(TubularPreset.read(lane.instrument.unwrap() as TubularDeviceBox))
-                    .toEqual(new Uint8Array(spec.sound.voice!.patch))
+                    .toEqual(new Uint8Array(spec.sound.voice!.patch!))
             }
         }
     })

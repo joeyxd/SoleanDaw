@@ -99,7 +99,7 @@ const makeSound = (cell: InstrumentCompositeCellBox, sound: PulseGridSoundInput)
         return InstrumentFactories.Nano.create(graph, cell.instrument, sound.label ?? name, IconSymbol.NanoWave, file)
     }
     const box = InstrumentFactories.Tubular.create(graph, cell.instrument, "Tubular", IconSymbol.Tubular)
-    if (sound.voice !== undefined) {TubularPreset.apply(box, new Uint8Array(sound.voice.patch))}
+    if (sound.voice?.patch !== undefined) {TubularPreset.apply(box, new Uint8Array(sound.voice.patch))}
     box.label.setValue(sound.label ?? sound.voice?.name ?? "Tubular")
     return box
 }

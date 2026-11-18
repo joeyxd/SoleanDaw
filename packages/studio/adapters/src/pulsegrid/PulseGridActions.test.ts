@@ -1,11 +1,15 @@
 import {describe, expect, it} from "vitest"
+import {readFileSync} from "node:fs"
+import {fileURLToPath} from "node:url"
 import {BoxGraph, IndexedBox} from "@opendaw/lib-box"
 import {UUID} from "@opendaw/lib-std"
 import {AudioUnitBox, CrusherDeviceBox} from "@opendaw/studio-boxes"
 import {ProjectSkeleton} from "../project/ProjectSkeleton"
+import {Dx7Sysex} from "../devices/instruments/Tubular/Dx7Sysex"
 import {InstrumentFactories} from "../factories/InstrumentFactories"
 import {IconSymbol} from "@opendaw/studio-enums"
 import {PulseGridActions, PulseGridView} from "./PulseGridActions"
+import {PulseGridCatalog, PulseGridCatalogItem} from "./PulseGridCatalog"
 import {PulseGridDevice} from "./PulseGridDevice"
 import {PulseGridDocs} from "./PulseGridDocs"
 import {PulseGridKits} from "./PulseGridKits"
@@ -56,6 +60,12 @@ const fixture = () => {
 }
 const sample = PulseGridKits.All[0].sounds.Perc
 const cowbell = {uuid: "83cfb3ec-f361-42dc-af1d-766f2bb0100d", name: "TR-707 Cowbell", duration: 0.1495}
+// Catalogue items: a sample of a folder (a drum), the Tubular Classics' Vibes and Bass Drum (melodic, and a drum voice).
+const items = PulseGridCatalog.items(
+    {name: "One Shots", folders: [{name: "TR-707", samples: [cowbell]}]},
+    [{name: "Tubular Classics", voices: Dx7Sysex.decode(new Uint8Array(readFileSync(
+        fileURLToPath(new URL("../../../../app/studio/public/tubular/cartridges/Tubular_Classics.syx", import.meta.url)))))}])
+const item = (name: string): PulseGridCatalogItem => items.find(item => item.name === name)!
 
 // Every action of the screen, the ops it must send, and one real call. A new action does not compile until it
 // is listed here.
@@ -112,6 +122,8 @@ const cases: Record<keyof typeof PulseGridActions, Case> = {
     shiftLane: {ops: ["rotate"], call: (_, lane) => PulseGridActions.shiftLane(lane, -1)},
     setLaneSound: {ops: ["setLaneSound"], call: (_, lane) => PulseGridActions.setLaneSound(lane, sample)},
     addDrumLane: {ops: ["addLane"], call: doc => PulseGridActions.addDrumLane(doc, cowbell)},
+    loadSound: {ops: ["setLaneSound"], call: (_, lane) => PulseGridActions.loadSound(lane, item("Vibraphone"))},
+    addSoundLane: {ops: ["addLane"], call: doc => PulseGridActions.addSoundLane(doc, item("Vibraphone"))},
     loadKit: {ops: ["setLaneSound"], call: doc => PulseGridActions.loadKit(doc, PulseGridKits.All[1])},
     loadBeat: {ops: ["setSetting", "setPatternLength", "setPatternText", "clear"],
         call: doc => PulseGridActions.loadBeat(doc, PulseGridKits.Beats[0])}
@@ -171,6 +183,41 @@ describe("PulseGridActions", () => {
             "Kick", "Snare", "Clap", "Hat", "Perc", "Cowbell", "Cowbell 2", "Synth", "Marimba"])
         expect(f.lane("Cowbell").sound?.sample?.uuid).toBe(cowbell.uuid)
         expect(f.lane("Cowbell").kind).toBe("drum")
+    })
+
+    it("loads a catalogue item into a lane: a sample into a Nano, a voice into a Tubular", () => {
+        const f = fixture()
+        f.ok(PulseGridActions.loadSound(f.lane("Kick").id, item("Cowbell")))
+        expect(f.lane("Kick").sound).toMatchObject({instrument: "Nano", sample: {uuid: cowbell.uuid}})
+        f.ok(PulseGridActions.loadSound(f.lane("Snare").id, item("Vibraphone")))
+        expect(f.lane("Snare").sound).toMatchObject({instrument: "Tubular", label: "Vibraphone"})
+        expect(f.lane("Snare").name).toBe("Snare")
+    })
+
+    it("adds a drum item as a drum lane under the last drum lane, numbered when the name is taken", () => {
+        const f = fixture()
+        f.ok(PulseGridActions.addSoundLane(f.read(), item("Cowbell")))
+        f.ok(PulseGridActions.addSoundLane(f.read(), item("Cowbell")))
+        f.ok(PulseGridActions.addSoundLane(f.read(), item("FM Snare")))
+        expect(f.read().lanes.map(lane => lane.name)).toEqual([
+            "Kick", "Snare", "Clap", "Hat", "Perc", "Cowbell", "Cowbell 2", "FM Snare", "Synth", "Marimba"])
+        expect(f.lane("Cowbell").sound?.sample?.uuid).toBe(cowbell.uuid)
+        expect(f.lane("FM Snare").sound).toMatchObject({instrument: "Tubular", label: "FM Snare"})
+        expect(["Cowbell", "Cowbell 2", "FM Snare"].map(name => [f.lane(name).kind, f.lane(name).group, f.lane(name).hue]))
+            .toEqual([["drum", 0, 150], ["drum", 0, 210], ["drum", 0, 265]])
+    })
+
+    it("adds a melodic item after the last lane on pitch 60, in the next new-lane hue", () => {
+        const f = fixture()
+        f.ok(PulseGridActions.addSoundLane(f.read(), item("Vibraphone")))
+        f.ok(PulseGridActions.addSoundLane(f.read(), item("Marimba")))
+        f.ok(PulseGridActions.addSoundLane(f.read(), item("Vibraphone")))
+        const lanes = f.read().lanes
+        expect(lanes.map(lane => lane.name)).toEqual([
+            "Kick", "Snare", "Clap", "Hat", "Perc", "Synth", "Marimba", "Vibraphone", "Marimba 2", "Vibraphone 2"])
+        expect(lanes.slice(7).map(lane => [lane.kind, lane.group, lane.pitch, lane.hue])).toEqual([
+            ["melodic", 1, 60, 36], ["melodic", 1, 60, 60], ["melodic", 1, 60, 77]])
+        expect(lanes[7].sound).toMatchObject({instrument: "Tubular", label: "Vibraphone"})
     })
 
     it("follows a lane's own length and the song position", () => {

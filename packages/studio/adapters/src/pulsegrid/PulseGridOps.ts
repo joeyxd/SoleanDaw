@@ -3,6 +3,7 @@ import {int} from "@opendaw/lib-std"
 import {InstrumentCompositeBox} from "@opendaw/studio-boxes"
 import {DeviceBoxUtils} from "../DeviceBox"
 import {PulseGridDevice, PulseGridLane} from "./PulseGridDevice"
+import {PulseGridCatalog} from "./PulseGridCatalog"
 import {PulseGridFactory} from "./PulseGridFactory"
 import {PulseGridDocs} from "./PulseGridDocs"
 import {PulseGridMoves} from "./PulseGridMoves"
@@ -12,7 +13,8 @@ import {PulseGridSongRegions} from "./PulseGridSong"
 import {PulseGridText} from "./PulseGridText"
 import {
     PulseGridDoc, PulseGridError, PulseGridLaneRef, PulseGridNote, PulseGridNoteInput, PulseGridOp, PulseGridOpName,
-    PulseGridOpResult, PulseGridOpsEnv, PulseGridSlot, PulseGridSong, PulseGridSongEntry, PulseGridSongEntryInput, PulseGridVariation
+    PulseGridOpResult, PulseGridOpsEnv, PulseGridSlot, PulseGridSong, PulseGridSongEntry, PulseGridSongEntryInput,
+    PulseGridSoundInput, PulseGridVariation
 } from "./PulseGridTypes"
 
 type Writes = Array<() => void>
@@ -230,6 +232,30 @@ const replacement = (lane: PulseGridLane, inputs: ReadonlyArray<PulseGridNoteInp
         else {fail(`note ${note.step}:${note.pitch} repeats; allowed one note per step and pitch`)}
     }
     return result
+}
+
+// A Tubular voice that has a name and no patch is looked up in the host's voice book and built as the browser
+// builds it (SPEC.md, section 11). A sound with a patch, or any other sound, is returned as it is and the book is
+// not asked; the factory checks it.
+const withVoice = (sound: PulseGridSoundInput, env: PulseGridOpsEnv): PulseGridSoundInput => {
+    if (sound === null || typeof sound !== "object" || sound.instrument !== "Tubular") {return sound}
+    const voice = sound.voice
+    if (voice === undefined || voice === null || typeof voice !== "object" || voice.patch !== undefined) {return sound}
+    const name = voice.name
+    if (typeof name !== "string") {fail(`voice name ${String(name)} is not allowed: expected a string`)}
+    const cartridge = voice.cartridge
+    if (cartridge !== undefined && typeof cartridge !== "string") {
+        fail(`voice cartridge ${String(cartridge)} is not allowed: expected a string`)
+    }
+    if (env.voices === undefined) {fail("this host has no Tubular voices by name; send the voice with its patch")}
+    const cartridges = env.voices!()
+    if (cartridges.length === 0) {fail("the Tubular voices are not loaded yet; send the request again")}
+    const found = PulseGridCatalog.voice(cartridges, name, cartridge)
+    if (found === undefined) {
+        const similar = PulseGridCatalog.similar(cartridges, name)
+        fail(`voice ${name} is not known${similar.length === 0 ? "" : `; names that hold a word of it: ${similar.join(", ")}`}`)
+    }
+    return {...PulseGridCatalog.sound(found!), ...(sound.label === undefined ? {} : {label: sound.label})}
 }
 
 const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes, env: PulseGridOpsEnv): Answer => {
@@ -471,7 +497,8 @@ const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes, env: 
         case "setLaneSound": {
             let lane: PulseGridLane
             if (op.op === "addLane") {
-                writes.push(() => {lane = PulseGridFactory.addLane(device, op, op.at)})
+                const spec = {...op, sound: withVoice(op.sound, env)}
+                writes.push(() => {lane = PulseGridFactory.addLane(device, spec, op.at)})
             } else {
                 lane = laneOf(device, op.lane)
                 if (op.op === "removeLane") {
@@ -480,7 +507,10 @@ const prepare = (device: PulseGridDevice, op: PulseGridOp, writes: Writes, env: 
                 }
                 if (op.op === "moveLane") {
                     writes.push(() => PulseGridFactory.moveLane(device, lane, op.to))
-                } else {writes.push(() => PulseGridFactory.setLaneSound(device, lane, op.sound))}
+                } else {
+                    const sound = withVoice(op.sound, env)
+                    writes.push(() => PulseGridFactory.setLaneSound(device, lane, sound))
+                }
             }
             return doc => [PulseGridText.formatLane(doc.lanes[
                 PulseGridDevice.find(device.composite).unwrap().lanes.findIndex(other => other.device === lane.device)])]

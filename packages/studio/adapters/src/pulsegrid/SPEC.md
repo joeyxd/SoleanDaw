@@ -492,3 +492,124 @@ lane's name and its sound. Three tabs:
 | Mix | Volume, Pan, Mute, Solo | `setLaneMix` |
 
 A knob or dial writes with `send(ops, false)` while it moves and marks once at the end, so one turn is one undo.
+
+## 11. Sounds: the catalogue, voices by name, the browser
+
+Family 6, second slice (designed 18 Nov). The browser (map D1 to D7) lists the sounds a lane can take. It adds no
+op: a pick is `setLaneSound` or `addLane` with a complete sound input. New are the catalogue (one list of named
+sounds, the same names for the screen and for agents) and Tubular voices by name.
+
+### The catalogue (`PulseGridCatalog`)
+
+Pure. The host hands in what it holds, the model makes the list:
+
+    PulseGridCatalog.items(samples, cartridges) -> ReadonlyArray<PulseGridCatalogItem>
+
+- `samples`: the "One Shots" folder of the sample index, `PulseGridSampleFolder` = `{name, folders?, samples?}`
+  where a sample is a `PulseGridSample` (uuid, name, duration). `undefined` while the host does not have it.
+- `cartridges`: the DX7 cartridges the host holds, `ReadonlyArray<PulseGridCartridge>` with `PulseGridCartridge`
+  = `{name, voices: ReadonlyArray<{name, data}>}` and `data` the 155 bytes of one voice (a `Dx7Voice`; the app's
+  `TubularCartridge` fits). `undefined` while the host does not have them.
+
+`PulseGridCatalogItem`:
+
+| field | meaning |
+|---|---|
+| `id` | `sample:<uuid>` (the id Nitro's catalogue uses) or `voice:<cartridge>/<voice name as stored, trimmed>` |
+| `name` | the shown name: "Bass Drum", "Vibraphone" |
+| `category` | `drums`, `bass`, `synths` or `mallets` |
+| `folder` | folder names from the category down, `[]` when the item sits directly in its category |
+| `kind` | `drum` for category drums, else `melodic` |
+| `source` | `{type: "sample", sample}` or `{type: "voice", cartridge, voice, data}` (`voice` is the stored name, trimmed) |
+
+Samples: every sample under the folder, at any depth. Category drums; `folder` is the folder names below "One
+Shots" (`["TR-808"]`); `name` is the sample's name without its own folder's name in front when it starts with it
+("TR-808 Bass Drum" in TR-808 is "Bass Drum"), else the name as it is.
+
+Voices, by cartridge and stored name (trimmed; case does not matter when matching):
+
+- a voice in the table `PulseGridCatalog.Named` takes that row's shown name and category, `folder` `[]`;
+- any other voice of "Tubular Classics": category synths, `folder` `[]`, its own name;
+- every other voice: category synths, `folder` `["More FM voices", <cartridge>]`, its own name;
+- a voice with an empty name is left out; of two voices with the same id the first stays.
+
+`Named` (cartridge "Tubular Classics" unless said):
+
+| stored name | shown name | category |
+|---|---|---|
+| Marimba | Marimba | mallets |
+| Vibes | Vibraphone | mallets |
+| Xylophone3 (SynprezFM 24) | Xylophone | mallets |
+| Glockensp (SynprezFM 09) | Glockenspiel | mallets |
+| Celesta | Celesta | mallets |
+| Glass Bell | Glass Bell | mallets |
+| Tubular | Tubular Bells | mallets |
+| Steel Drum | Steel Drum | mallets |
+| Timpani | Timpani | mallets |
+| Kalimba.3 (SynprezFM 11) | Kalimba | mallets |
+| Slap Bass | Slap Bass | bass |
+| Solid Bass | Solid Bass | bass |
+| Synth Bass | Synth Bass | bass |
+| Fretless | Fretless Bass | bass |
+| Bass Drum | FM Bass Drum | drums |
+| Snare | FM Snare | drums |
+| Soft Rhds | Soft Rhodes | synths |
+| Brite Rhds | Bright Rhodes | synths |
+| Brass Sect | Brass Section | synths |
+| Harpsichrd | Harpsichord | synths |
+| Nylon Gtr | Nylon Guitar | synths |
+| Square Ld | Square Lead | synths |
+| Bright Ld | Bright Lead | synths |
+
+A row whose voice the host does not hold gives no item. Order of `items`: drums, bass, synths, mallets. Inside a
+category: items with `folder` `[]` first (rows of `Named` in table order, then the cartridge's order), then the
+folders in the order they were given, each with its items in the order given.
+
+`PulseGridCatalog.find(items, {tab, query})`: `tab` is `all`, `drums`, `synths` or `mallets`; `synths` holds bass
+and synths. `query`: every word of it, in any case, is in the name or in one of the folder names (the rule of
+Nitro's catalogue); an empty query matches all. The order of `items` is kept.
+
+`PulseGridCatalog.sound(item) -> PulseGridSoundInput`: a sample gives `{instrument: "Nano", sample}`, a voice
+`{instrument: "Tubular", voice: {name: <stored name>, patch: <the 155 bytes as numbers>}, label: <shown name>}`.
+
+### Voices by name
+
+A Tubular sound input may name its voice in place of carrying it: `"voice": {"name": "Vibraphone"}` or
+`{"name": "Xylophone3", "cartridge": "SynprezFM 24"}`, without `patch`. The host's voice book answers:
+`PulseGridOpsEnv.voices`, a function returning the cartridges the host holds now. The lookup is
+`PulseGridCatalog.voice(cartridges, name, cartridge?)`, case does not matter, names trimmed:
+
+1. with `cartridge`: in that cartridge only, by stored name, or by the shown name of a `Named` row of it;
+2. without: a `Named` row by its shown name, then by its stored name; then "Tubular Classics" by stored name;
+   then the first cartridge in the order given that holds a voice of that stored name.
+
+The sound is then built as from `sound(item)`: the label is the shown name when a `Named` row matched, else the
+stored name; a `label` in the input wins. Refused, with nothing changed: the host passed no voice book (`this
+host has no Tubular voices by name; send the voice with its patch`), the book is empty (`the Tubular voices are
+not loaded yet; send the request again`), the cartridge or the voice is not there (`voice <name> is not known`,
+with up to five names that hold a word of it when there are any). A voice with a `patch` is taken as before and
+the book is not asked. A voice named by an agent and the same voice picked in the browser give the same lane.
+
+### Actions (`PulseGridActions`)
+
+| action | ops |
+|---|---|
+| `loadSound(lane, item)` | `setLaneSound` with `sound(item)` |
+| `addSoundLane(doc, item)` | `addLane`. A `drum` item as `addDrumLane` does: kind drum, group 0, under the last drum lane. A `melodic` item: kind melodic, group 1, after the last lane, pitch 60. The name is the item's shown name, with a number when that name is taken; the hue is the next of the new-lane hues |
+
+### What the screen adds: the browser (map D1 to D7)
+
+The left column holds the scenes on top and the browser under them, as in the picture.
+
+| part | on the screen |
+|---|---|
+| tabs | All, Drums, Synths, Mallets (`find`'s `tab`) |
+| search | one field; the list becomes the flat matches, each with its folder; at most 200 rows, then a line saying how many more there are |
+| list | without a query: Drums, Bass, Synths, Mallets, each with its direct sounds and then its folders, closed at first |
+| favourites | the heart of a row; favourites that pass the tab and the query stand first under "Favourites". Kept per browser (local storage `pulsegrid.favourites`, the ids), not in the project |
+| click a sound | the selected lane takes it (`loadSound`); with no lane selected a new lane is made |
+| + on a row | a new lane with that sound (`addSoundLane`) |
+| drag a row | onto a lane: that lane takes it; onto the lanes anywhere else: a new lane |
+
+The window's ops and the agent inbox both pass `voices` (the loaded Tubular cartridges), so an agent's voice by
+name lands in an open tab as it does headless.
