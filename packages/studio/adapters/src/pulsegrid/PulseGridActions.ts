@@ -211,6 +211,20 @@ export namespace PulseGridActions {
 
     export const setMute = (lane: string, mute: boolean): Ops => [{op: "setLaneMix", lane, mute}]
     export const setSolo = (lane: string, solo: boolean): Ops => [{op: "setLaneMix", lane, solo}]
+    // The instrument panel (SPEC.md section 10)
+    export const setVolume = (lane: string, gain: number): Ops => [{op: "setLaneMix", lane, gain}]
+    export const setPan = (lane: string, pan: number): Ops => [{op: "setLaneMix", lane, pan}]
+    export const setLaneChance = (lane: string, probability: number): Ops => [{op: "setLane", lane, probability}]
+    export const setLaneHumanize = (lane: string, humanize: number): Ops => [{op: "setLane", lane, humanize}]
+    export const setLaneAccent = (lane: string, accent: boolean): Ops => [{op: "setLane", lane, accent}]
+    // A parameter of the lane's instrument, or of its effect `effect` (from 1); value in the field's own unit.
+    export const setParam = (lane: string, param: string, value: number | boolean, effect?: int): Ops =>
+        [{op: "setParam", lane, param, value, ...(effect === undefined ? {} : {effect})}]
+    export const addEffect = (lane: string, effect: string): Ops => [{op: "addEffect", lane, effect}]
+    export const removeEffect = (lane: string, effect: int): Ops => [{op: "removeEffect", lane, effect}]
+    export const switchEffect = (lane: string, effect: int, enabled: boolean): Ops =>
+        [{op: "setEffect", lane, effect, enabled}]
+    export const moveEffect = (lane: string, effect: int, to: int): Ops => [{op: "setEffect", lane, effect, to}]
     export const renameLane = (lane: string, name: string): Ops => [{op: "setLane", lane, name}]
     export const moveLane = (lane: string, to: int): Ops => [{op: "moveLane", lane, to}]
     export const removeLane = (lane: string): Ops => [{op: "removeLane", lane}]
