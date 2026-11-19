@@ -1,0 +1,49 @@
+// The neon picture of an instrument. The file is white line art on black: it goes grey, the lane's colour is
+// multiplied over it, and the black square is let go by blending the box into what is behind it.
+component
+  position: relative
+  isolation: isolate
+  overflow: hidden
+  width: 100%
+  aspect-ratio: 3 / 2
+  border-radius: 8px
+  mix-blend-mode: screen
+  pointer-events: none
+  user-select: none
+
+  > img
+    display: block
+    width: 100%
+    height: 100%
+    object-fit: contain
+    filter: grayscale(1)
+
+  // the tint, only once the file is there (.ready): over the empty box it would be a plain coloured rectangle
+  &::after
+    content: ""
+    position: absolute
+    inset: 0
+    background: var(--lane, #a22ada)
+    mix-blend-mode: multiply
+    pointer-events: none
+    display: none
+
+  &.ready::after
+    display: block
+
+  // the file is not there: the kind's icon stands in, in the lane's colour
+  &.missing
+    display: flex
+    align-items: center
+    justify-content: center
+    mix-blend-mode: normal
+
+    &::after
+      display: none
+
+    > .pg-icon
+      width: min(72px, 45%)
+      height: auto
+      aspect-ratio: 1
+      color: var(--lane, #a22ada)
+      filter: drop-shadow(0 0 8px var(--lane, #a22ada))

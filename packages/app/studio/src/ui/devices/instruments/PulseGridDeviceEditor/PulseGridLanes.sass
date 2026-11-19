@@ -122,7 +122,7 @@ component
       outline-offset: 2px
 
     &.quiet
-      > .head > .led
+      > .head > .pg-icon
         opacity: 0.35
 
       > .cells
@@ -150,6 +150,24 @@ component
         flex: 0 0 34px
         width: auto
 
+      // the note names of an open piano roll, with the lane's picture beside them: the names keep their own
+      // rows, the picture takes what is left of the width and never more than the height of the names
+      > .rolled
+        display: grid
+        grid-template-columns: minmax(0, 1fr) auto
+        background: var(--pg-panel, #0b0e23)
+
+        > .art
+          position: relative
+          container-type: size
+          min-width: 0
+
+          > [data-picture]
+            position: absolute
+            top: 0
+            left: 0
+            width: min(100%, 150cqh)
+
     > .body
       flex: 1 1 auto
       min-width: 0
@@ -161,7 +179,7 @@ component
         flex: 0 0 34px
 
     &.quiet
-      > .side > .head > .led
+      > .side > .head > .pg-icon
         opacity: 0.35
 
       > .body
@@ -214,12 +232,15 @@ component
       transform: rotate(90deg)
       color: var(--lane)
 
-  .led
-    flex: 0 0 9px
-    height: 9px
-    border-radius: 2px
-    background: var(--lane)
-    box-shadow: 0 0 7px var(--lane)
+  // the picture of what the lane plays, small, in the lane's colour
+  .head > .pg-icon
+    flex: 0 0 16px
+    width: 16px
+    height: 16px
+    // the old square was 9 px: the icon takes the 7 px more out of its own gaps, so the name keeps its room
+    margin: 0 -3.5px
+    color: var(--lane)
+    filter: drop-shadow(0 0 4px var(--lane))
 
   .names
     flex: 1 1 auto

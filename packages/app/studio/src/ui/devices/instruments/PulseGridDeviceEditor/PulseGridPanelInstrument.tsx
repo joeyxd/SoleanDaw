@@ -1,19 +1,20 @@
 import {Lifecycle} from "@opendaw/lib-std"
 import {createElement} from "@opendaw/lib-jsx"
-import {InstrumentFactories, PulseGridActions, PulseGridKnobs, PulseGridLaneDoc} from "@opendaw/studio-adapters"
+import {PulseGridActions, PulseGridKnobs, PulseGridLaneDoc} from "@opendaw/studio-adapters"
 import {MenuItem} from "@opendaw/studio-core"
-import {Icon} from "@/ui/components/Icon"
 import {Button} from "@/ui/components/Button"
 import {MenuButton} from "@/ui/components/MenuButton"
 import {PulseGridContext} from "./PulseGridContext"
 import {PulseGridDial} from "./PulseGridDial"
+import {PulseGridPicture} from "./PulseGridIcons"
 import {PulseGridPanelLogic} from "./PulseGridPanelLogic"
 import {PulseGridPanelParam} from "./PulseGridPanelParam"
+import {PulseGridPictures} from "./PulseGridPictures"
 import {PulseGridSounds} from "./PulseGridSounds"
 
 type Construct = {lifecycle: Lifecycle, context: PulseGridContext, lane: PulseGridLaneDoc}
 
-// Tab Instrument: the picture (the instrument's icon until the pictures exist), the sound and Change sound, the four
+// Tab Instrument: the picture of the instrument, the sound and Change sound, the four
 // big knobs, then the lane's Chance, Humanize and Step accents. Every control is an op.
 export const PulseGridPanelInstrument = ({lifecycle, context, lane}: Construct): HTMLElement => {
     const {doc} = context
@@ -38,11 +39,10 @@ export const PulseGridPanelInstrument = ({lifecycle, context, lane}: Construct):
     )
     accent.dataset.toggle = "accent"
     if (sound === null) {return <div className="body empty">This lane has no instrument.</div>}
-    const factory = InstrumentFactories.Named[sound.instrument as keyof typeof InstrumentFactories.Named]
     return (
         <div className="body instrument">
             <div className="picture">
-                {factory === undefined ? <span/> : <Icon symbol={factory.defaultIcon}/>}
+                <PulseGridPicture kind={PulseGridPictures.of(lane)}/>
                 <span className="sound" data-sound="">{sound.label}</span>
                 {sound.instrument === "Nano" ? (
                     <div className="pg-group change">

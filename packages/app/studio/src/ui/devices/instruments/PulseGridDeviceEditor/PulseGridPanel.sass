@@ -80,11 +80,9 @@ component
     align-items: center
     gap: 8px
 
-    > svg
-      width: 72px
-      height: 72px
-      color: var(--lane)
-      filter: drop-shadow(0 0 8px var(--lane))
+    // the neon picture takes the full width of the body, 3:2 (PulseGridPicture.sass)
+    > [data-picture]
+      align-self: stretch
 
     > .sound
       max-width: 100%

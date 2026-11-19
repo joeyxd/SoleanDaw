@@ -7,8 +7,10 @@ import {Surface} from "@/ui/surface/Surface.tsx"
 import {PulseGridContext} from "./PulseGridContext"
 import {PulseGridAudition} from "./PulseGridAudition"
 import flashCss from "./PulseGridLaneFlash.sass?inline"
+import {PulseGridIcons, PulseGridPicture} from "./PulseGridIcons"
 import {PulseGridLaneLogic} from "./PulseGridLaneLogic"
 import {PulseGridLaneMenus} from "./PulseGridLaneMenus"
+import {PulseGridPictures} from "./PulseGridPictures"
 import {PulseGridRoll} from "./PulseGridRoll"
 import {PulseGridValueRows} from "./PulseGridValueRows"
 
@@ -84,11 +86,12 @@ export const PulseGridLaneRow = ({inner, context, doc, lane, columns, anySolo, p
             Events.subscribe(button, "click", toggle))
         return button
     }
+    const kind = PulseGridPictures.of(lane)
     const head: HTMLElement = (
         <div className="head">
             {grip}
             {fold}
-            <span className="led"/>
+            {PulseGridIcons.of(kind)}
             <div className="names">
                 {name}
                 <span className="sub">{sub}</span>
@@ -138,7 +141,9 @@ export const PulseGridLaneRow = ({inner, context, doc, lane, columns, anySolo, p
             PulseGridLaneLogic.isQuiet(lane, anySolo) && "quiet")}
              data-lane={lane.id}
              style={{"--lane": `hsl(${lane.hue} 98% 60%)`}}>
-            {open ? <div className="side">{head}{roll?.labels}{values?.labels}</div> : head}
+            {open ? <div className="side">{head}{roll === undefined ? false : (
+                <div className="rolled"><div className="art"><PulseGridPicture kind={kind}/></div>{roll.labels}</div>
+            )}{values?.labels}</div> : head}
             {open ? <div className="body">{stepRow}{roll?.element}{values?.element}</div> : stepRow}
         </div>
     )
