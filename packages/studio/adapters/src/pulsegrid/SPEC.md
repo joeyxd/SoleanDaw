@@ -613,3 +613,39 @@ The left column holds the scenes on top and the browser under them, as in the pi
 
 The window's ops and the agent inbox both pass `voices` (the loaded Tubular cartridges), so an agent's voice by
 name lands in an open tab as it does headless.
+
+## 12. Built-in drums
+
+Family 6, third slice (designed 19 Nov). Why: every starter drum was a sample of openDAW's cloud library, named by
+uuid and loaded from assets.opendaw.studio. That server answers CORS only to localhost and opendaw.studio, so on any
+other site the browser blocked the index and every file, and every drum was silent with no error. We may not copy
+those samples (not licensed for redistribution). So the starter drums are made by our own code, in
+`PulseGridDrums`: pure arithmetic on arrays (sines, seeded noise, small biquads), nothing to download.
+
+24 sounds, 4 kits x 6: Analog, Punch, Electro, Soft, each with Kick, Snare, Clap, Hat, Open Hat and Perc. The name is
+`<Kit> <Sound>` ("Analog Kick"); uuids are constants of the file. `duration` is the length in seconds the sound
+renders to (its envelope is 60 dB down; a 5 ms fade ends it; the peak is 0.9):
+
+| kit | Kick | Snare | Clap | Hat | Open Hat | Perc |
+|---|---|---|---|---|---|---|
+| Analog | 2.4177s | 0.9671s | 0.6547s | 0.2418s | 1.9342s | 0.2072s |
+| Punch | 1.1052s | 0.8289s | 0.8619s | 0.2763s | 1.7269s | 0.1382s |
+| Electro | 0.8289s | 0.6908s | 0.5165s | 0.2072s | 1.5197s | 0.8289s |
+| Soft | 1.7269s | 1.1052s | 0.7238s | 0.3454s | 2.3486s | 0.4245s |
+
+- `PulseGridDrums.All`, `find(uuid)`, `byName(name)` (case and outer spaces do not matter),
+  `render(uuid, sampleRate)` (mono `AudioData`, or undefined for a uuid that is not ours). The same uuid and rate give
+  the same samples every time: the noise is seeded (mulberry32) from the uuid.
+- The sound input `{"drum": "Analog Kick"}` (with an optional `label`) is accepted wherever a sound input is: `addLane`,
+  `setLaneSound`, and the lane specs of `PulseGridFactory`. The model turns it into the sampler input of that drum
+  (`{instrument: "Nano", sample: {uuid, name, duration}}`). An unknown name is refused, nothing changed, with
+  `drum <name> is not known; kits: Analog, Punch, Electro, Soft; a drum is a kit and a sound, ...`.
+- A lane that plays a built-in reads back by its name: `sound.label` and `sound.sample.name` are "Analog Kick".
+  The `sounds` block names the instrument only, so it has no list of nameable sounds; this section is that list.
+- `PulseGridKits.All` starts with the four built-in kits (`builtin: true`; the five roles Kick, Snare, Clap, Hat,
+  Perc), then the nine cloud kits unchanged. The default lanes of a new PulseGrid are the Analog kit.
+- `PulseGridCatalog.items(samples, cartridges, true)` puts the built-in drums first, folder `["PulseGrid drums", <kit>]`.
+- The screen (a host's job, not the model's): the host answers a built-in uuid from `render` before it asks the
+  network; the Kit menu offers the cloud kits, and the browser the cloud folders, only once the cloud index has
+  loaded in this tab. When openDAW's library cannot be used on this site, the browser says so in one quiet line.
+  Lanes that already point at cloud samples are not migrated.

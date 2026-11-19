@@ -155,6 +155,8 @@ export type PulseGridSlot = {scene?: int, variation?: PulseGridVariation}
 export type PulseGridSoundInput =
     // one audio file in a sampler; duration in seconds; label defaults to the sample's name
     | {instrument: "Nano", sample: {uuid: string, name: string, duration: number}, label?: string}
+    // a built-in drum by name ("Analog Kick"), made by our own code (PulseGridDrums, SPEC.md section 12)
+    | {drum: string, instrument?: undefined, label?: string}
     // the FM synth; patch is the 155 bytes of one DX7 voice, left out for the init voice. Without a patch the voice
     // is named, and PulseGridOps looks it up in the host's voice book (SPEC.md, section 11).
     | {

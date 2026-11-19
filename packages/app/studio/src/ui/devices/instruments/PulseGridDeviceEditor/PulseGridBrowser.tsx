@@ -133,11 +133,7 @@ export const PulseGridBrowser = ({lifecycle, context}: Construct): HTMLElement =
         const book = PulseGridSounds.catalogue()
         if (book !== state.book) {
             state.book = book
-            state.byId = new Map(book.status === "ready" ? book.items.map(item => [item.id, item]) : [])
-        }
-        if (book.status !== "ready") {
-            list.replaceChildren(line(book.status === "failed" ? "Sounds are not available" : "Loading sounds…", "state"))
-            return
+            state.byId = new Map(book.items.map(item => [item.id, item]))
         }
         const text = query.getValue()
         const {sections, more} = Logic.view(book.items, state.tab, text, new Set(state.favourites), state.open)
@@ -151,6 +147,7 @@ export const PulseGridBrowser = ({lifecycle, context}: Construct): HTMLElement =
         if (sections.length === 0) {
             built.push(line(Logic.hasQuery(text) ? Logic.noMatch(text) : "Nothing in this tab.", "state"))
         }
+        if (book.blocked) {built.push(line(Logic.NotAllowed, "state"))}
         list.replaceChildren(...built)
         list.scrollTop = scroll
         if (focus !== undefined) {list.querySelector<HTMLElement>(focus)?.focus({preventScroll: true})}

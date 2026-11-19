@@ -5,6 +5,7 @@ import {IconSymbol, Pointers} from "@opendaw/studio-enums"
 import {InstrumentFactories} from "../factories/InstrumentFactories"
 import {TubularPreset} from "../devices/instruments/Tubular/TubularPreset"
 import {PulseGridDevice, PulseGridLane} from "./PulseGridDevice"
+import {PulseGridDrums} from "./PulseGridDrums"
 import {PulseGridError, PulseGridSoundInput} from "./PulseGridTypes"
 
 export type PulseGridLaneSpec = {
@@ -29,6 +30,8 @@ const marimba = [
     99,99,99,99,50,50,50,50,4,4,1,35,0,0,0,1,0,3,24,77,97,114,105,109,98,97,32,32,32
 ]
 
+// The starter drums are the Analog kit: built in, so they sound on any site.
+const drum = (name: string): PulseGridSoundInput => ({instrument: "Nano", sample: PulseGridDrums.sample(name)})
 const fail: (message: string) => never = message => {throw new PulseGridError(message)}
 const text = (name: string, value: unknown): void => {
     if (typeof value !== "string") {fail(`${name} ${String(value)} is not allowed: expected a string`)}
@@ -38,7 +41,12 @@ const integer = (name: string, value: number, min: int, max: int): void => {
         fail(`${name} ${String(value)} is not allowed: expected an integer ${min}..${max}`)
     }
 }
-const validateSound = (graph: BoxGraph, sound: PulseGridSoundInput): void => {
+// A built-in drum named by `{drum}` becomes the sampler input it stands for; everything else is left as it is.
+const concrete = (sound: PulseGridSoundInput): Exclude<PulseGridSoundInput, {drum: string}> =>
+    sound !== null && typeof sound === "object" && "drum" in sound
+        ? PulseGridDrums.input(sound.drum, sound.label) : sound as Exclude<PulseGridSoundInput, {drum: string}>
+const validateSound = (graph: BoxGraph, given: PulseGridSoundInput): void => {
+    const sound = concrete(given)
     if (sound === null || typeof sound !== "object") {fail("sound must be Nano or Tubular")}
     if (sound.label !== undefined) {text("sound label", sound.label)}
     if (sound.instrument === "Nano") {
@@ -87,8 +95,9 @@ const cellsOf = (composite: InstrumentCompositeBox): Array<InstrumentCompositeCe
         .sort((a, b) => a.index.getValue() - b.index.getValue())
 const indexCells = (cells: ReadonlyArray<InstrumentCompositeCellBox>): void =>
     cells.forEach((cell, index) => cell.index.setValue(index))
-const makeSound = (cell: InstrumentCompositeCellBox, sound: PulseGridSoundInput) => {
+const makeSound = (cell: InstrumentCompositeCellBox, given: PulseGridSoundInput) => {
     const graph = cell.graph
+    const sound = concrete(given)
     if (sound.instrument === "Nano") {
         const {uuid, name, duration} = sound.sample
         const file = graph.findBox<AudioFileBox>(UUID.parse(uuid)).unwrapOrElse(() =>
@@ -126,16 +135,11 @@ const makeLane = (composite: InstrumentCompositeBox, head: PulseGridBox, spec: P
 
 export namespace PulseGridFactory {
     export const DefaultKit: ReadonlyArray<PulseGridLaneSpec> = [
-        {name: "Kick", kind: "drum", hue: 181, sound: {instrument: "Nano", sample: {
-            uuid: "b50f6f4f-d933-400c-a63a-83b3c2f6c8b2", name: "TR-808 Bass Drum", duration: 3}}},
-        {name: "Snare", kind: "drum", hue: 300, sound: {instrument: "Nano", sample: {
-            uuid: "0378e25e-6d3f-4db3-a54f-4ae795ca0ff7", name: "TR-808 Snare Drum", duration: 0.5}}},
-        {name: "Clap", kind: "drum", hue: 36, sound: {instrument: "Nano", sample: {
-            uuid: "8537b54c-f18a-459f-9f29-a847232a889e", name: "TR-808 Hand Clap", duration: 2}}},
-        {name: "Hat", kind: "drum", hue: 60, sound: {instrument: "Nano", sample: {
-            uuid: "bd20b35e-bdde-4dff-860a-a5524d7adbfc", name: "TR-808 Closed Hi-Hat", duration: 0.25}}},
-        {name: "Perc", kind: "drum", hue: 77, sound: {instrument: "Nano", sample: {
-            uuid: "210afc07-3e7e-4548-8608-012b82790a31", name: "TR-808 Claves", duration: 0.25}}},
+        {name: "Kick", kind: "drum", hue: 181, sound: drum("Analog Kick")},
+        {name: "Snare", kind: "drum", hue: 300, sound: drum("Analog Snare")},
+        {name: "Clap", kind: "drum", hue: 36, sound: drum("Analog Clap")},
+        {name: "Hat", kind: "drum", hue: 60, sound: drum("Analog Hat")},
+        {name: "Perc", kind: "drum", hue: 77, sound: drum("Analog Perc")},
         {name: "Synth", kind: "melodic", hue: 301, sound: {instrument: "Tubular", voice: {name: "Synth Bass", patch: synthBass}}},
         {name: "Marimba", kind: "melodic", hue: 35, sound: {instrument: "Tubular", voice: {name: "Marimba", patch: marimba}}}
     ]

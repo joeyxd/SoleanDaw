@@ -1,4 +1,5 @@
 import {Optional} from "@opendaw/lib-std"
+import {PulseGridDrums} from "./PulseGridDrums"
 import {PulseGridKits, PulseGridSample} from "./PulseGridKits"
 import {PulseGridCartridge, PulseGridSoundInput} from "./PulseGridTypes"
 
@@ -31,6 +32,7 @@ export type PulseGridNamedVoice = {
 
 const Classics = "Tubular Classics"
 const MoreVoices = "More FM voices"
+const BuiltInDrums = "PulseGrid drums"
 const Categories: ReadonlyArray<PulseGridCatalogCategory> = ["drums", "bass", "synths", "mallets"]
 const named = (voice: string, name: string, category: PulseGridCatalogCategory,
                cartridge: string = Classics): PulseGridNamedVoice => ({voice, name, category, cartridge})
@@ -118,9 +120,17 @@ export namespace PulseGridCatalog {
         return [...Named.flatMap(row => rows.has(row) ? [rows.get(row)!] : []), ...others]
     }
 
+    // The built-in drums as the first group of the drums: "PulseGrid drums", a folder for each kit (SPEC.md, section 12).
+    export const drumItems = (): ReadonlyArray<PulseGridCatalogItem> => PulseGridDrums.All.map(({uuid, name, kit, duration}) => ({
+        id: `sample:${uuid}`, name: withoutFolder(name, kit), category: "drums", folder: [BuiltInDrums, kit], kind: "drum",
+        source: {type: "sample", sample: {uuid, name, duration}}
+    }))
+
+    // `drums`: put the built-in drums first, the way the screen's browser does. Left out, only what the host holds.
     export const items = (samples: Optional<PulseGridSampleFolder>,
-                          cartridges: Optional<ReadonlyArray<PulseGridCartridge>>): ReadonlyArray<PulseGridCatalogItem> => {
-        const found = voiceItems(cartridges ?? [])
+                          cartridges: Optional<ReadonlyArray<PulseGridCartridge>>,
+                          drums: boolean = false): ReadonlyArray<PulseGridCatalogItem> => {
+        const found = [...(drums ? drumItems() : []), ...voiceItems(cartridges ?? [])]
         if (samples !== undefined) {sampleItems(samples, [], found)}
         const ids = new Set<string>()
         const unique = found.filter(item => !ids.has(item.id) && ids.add(item.id) !== undefined)

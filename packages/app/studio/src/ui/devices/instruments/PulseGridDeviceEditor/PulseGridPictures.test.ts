@@ -74,7 +74,7 @@ describe("PulseGridPictures.of falls back", () => {
 })
 
 describe("PulseGridPictures.of for the nine kits", () => {
-    const generic = /clave/i
+    const generic = /clave|perc/i
     PulseGridKits.All.forEach(kit => Object.values(kit.sounds).forEach(sample => {
         it(`${kit.name}: "${sample.name}" has a picture of its own by its label alone`, () => {
             const kind = PulseGridPictures.of(lane(sample.name, "Lane 7"))

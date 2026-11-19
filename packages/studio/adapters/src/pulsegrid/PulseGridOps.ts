@@ -4,6 +4,7 @@ import {InstrumentCompositeBox} from "@opendaw/studio-boxes"
 import {DeviceBoxUtils} from "../DeviceBox"
 import {PulseGridDevice, PulseGridLane} from "./PulseGridDevice"
 import {PulseGridCatalog} from "./PulseGridCatalog"
+import {PulseGridDrums} from "./PulseGridDrums"
 import {PulseGridFactory} from "./PulseGridFactory"
 import {PulseGridDocs} from "./PulseGridDocs"
 import {PulseGridMoves} from "./PulseGridMoves"
@@ -234,10 +235,12 @@ const replacement = (lane: PulseGridLane, inputs: ReadonlyArray<PulseGridNoteInp
     return result
 }
 
+// A built-in drum named by `{drum}` is built from PulseGridDrums (SPEC.md, section 12).
 // A Tubular voice that has a name and no patch is looked up in the host's voice book and built as the browser
 // builds it (SPEC.md, section 11). A sound with a patch, or any other sound, is returned as it is and the book is
 // not asked; the factory checks it.
 const withVoice = (sound: PulseGridSoundInput, env: PulseGridOpsEnv): PulseGridSoundInput => {
+    if (sound !== null && typeof sound === "object" && "drum" in sound) {return PulseGridDrums.input(sound.drum, sound.label)}
     if (sound === null || typeof sound !== "object" || sound.instrument !== "Tubular") {return sound}
     const voice = sound.voice
     if (voice === undefined || voice === null || typeof voice !== "object" || voice.patch !== undefined) {return sound}

@@ -36,6 +36,9 @@ export namespace PulseGridBrowserLogic {
         {key: "synths", title: "Synths"}, {key: "mallets", title: "Mallets"}
     ]
 
+    // Said once, quietly, where the library's folders would be, when the server does not let this site read them.
+    export const NotAllowed = "openDAW's sample library is not available on this site."
+
     export const hasQuery = (query: string): boolean => query.trim() !== ""
 
     export const moved = (dx: number, dy: number): boolean => Math.hypot(dx, dy) >= DragThreshold

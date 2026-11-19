@@ -12,6 +12,7 @@ import {Surface} from "@/ui/surface/Surface"
 import {PulseGridContext} from "./PulseGridContext"
 import {PulseGridDial} from "./PulseGridDial"
 import {PulseGridKeyScale} from "./PulseGridKeyScale"
+import {PulseGridSounds} from "./PulseGridSounds"
 
 const className = Html.adoptStyleSheet(css, "PulseGridTopBar")
 
@@ -29,7 +30,7 @@ export const PulseGridTopBar = ({lifecycle, context}: Construct): HTMLElement =>
     }))
     const kit = MenuItem.root().setRuntimeChildrenProcedure(parent => parent.addMenuItem(
         MenuItem.header({label: "Kits", icon: IconSymbol.DrumSet}),
-        ...PulseGridKits.All.map(kit => MenuItem.default({label: kit.name})
+        ...PulseGridSounds.kits().map(kit => MenuItem.default({label: kit.name})
             .setTriggerProcedure(() => context.send(PulseGridActions.loadKit(doc.getValue(), kit)))),
         MenuItem.header({label: "Beats", icon: IconSymbol.DrumSet}),
         ...PulseGridKits.Beats.map(beat => MenuItem.default({label: beat.name})

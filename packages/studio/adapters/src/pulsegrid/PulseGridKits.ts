@@ -1,13 +1,17 @@
 import {int} from "@opendaw/lib-std"
+import {PulseGridDrums} from "./PulseGridDrums"
 import {PulseGridDoc, PulseGridLaneDoc, PulseGridOp, PulseGridSoundInput} from "./PulseGridTypes"
 
 // Starter kits and starter beats: plain data, turned into ordinary ops, so the screen and an agent load them
-// the same way. The samples are openDAW's cloud library (assets.opendaw.studio/samples/index.json, folder
-// openDAW/One Shots), named by uuid, name and duration, so nothing is fetched to build a lane.
+// the same way. The first four kits are the built-in drums (PulseGridDrums): our own code makes them, so they play
+// on any site. The rest are openDAW's cloud library (assets.opendaw.studio/samples/index.json, folder
+// openDAW/One Shots), named by uuid, name and duration, so nothing is fetched to build a lane; the library does
+// not load on other sites, so the screen offers those kits only once it has loaded (SPEC.md, section 12).
 
 export type PulseGridRole = "Kick" | "Snare" | "Clap" | "Hat" | "Perc"
 export type PulseGridSample = {uuid: string, name: string, duration: number}
-export type PulseGridKit = {id: string, name: string, sounds: Readonly<Record<PulseGridRole, PulseGridSample>>}
+// `builtin`: made by our own code, so it needs no library
+export type PulseGridKit = {id: string, name: string, builtin?: true, sounds: Readonly<Record<PulseGridRole, PulseGridSample>>}
 // A beat is 16 steps per role, written as the cells of a grid line (SPEC.md, section 4).
 export type PulseGridBeat = {
     id: string, name: string, swing: number, lines: Readonly<Partial<Record<PulseGridRole, string>>>
@@ -17,6 +21,14 @@ type Entry = [uuid: string, name: string, duration: number]
 const kit = (id: string, name: string, ...entries: [Entry, Entry, Entry, Entry, Entry]): PulseGridKit => {
     const [kick, snare, clap, hat, perc] = entries.map(([uuid, name, duration]) => ({uuid, name, duration}))
     return {id, name, sounds: {Kick: kick, Snare: snare, Clap: clap, Hat: hat, Perc: perc}}
+}
+
+const builtIn = (kitName: string): PulseGridKit => {
+    const sound = (role: string): PulseGridSample => PulseGridDrums.sample(`${kitName} ${role}`)
+    return {
+        id: kitName.toLowerCase(), name: kitName, builtin: true,
+        sounds: {Kick: sound("Kick"), Snare: sound("Snare"), Clap: sound("Clap"), Hat: sound("Hat"), Perc: sound("Perc")}
+    }
 }
 
 export namespace PulseGridKits {
@@ -30,6 +42,7 @@ export namespace PulseGridKits {
     ]
 
     export const All: ReadonlyArray<PulseGridKit> = [
+        ...PulseGridDrums.Kits.map(builtIn),
         kit("tr-808", "TR-808",
             ["b50f6f4f-d933-400c-a63a-83b3c2f6c8b2", "TR-808 Bass Drum", 3],
             ["0378e25e-6d3f-4db3-a54f-4ae795ca0ff7", "TR-808 Snare Drum", 0.5],
