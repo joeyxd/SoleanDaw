@@ -6,7 +6,8 @@ import {PulseGridActions, PulseGridCatalogItem, PulseGridCatalogTab} from "@open
 import {SearchInput} from "@/ui/components/SearchInput"
 import {PulseGridContext} from "./PulseGridContext"
 import {PulseGridBrowserDrags} from "./PulseGridBrowserDrags"
-import {PulseGridBrowserLogic as Logic, PulseGridBrowserRow} from "./PulseGridBrowserLogic"
+import {PulseGridBrowserLogic as Logic, PulseGridBrowserRow, PulseGridFavourite} from "./PulseGridBrowserLogic"
+import {NitroBridge} from "@/nitro/NitroBridge"
 import {PulseGridSoundBook, PulseGridSounds} from "./PulseGridSounds"
 
 const className = Html.adoptStyleSheet(css, "PulseGridBrowser")
@@ -17,18 +18,34 @@ const Indent = 12
 
 // The sounds a lane can take, under the scenes (SPEC.md, section 11). A click on a name gives the selected lane the
 // sound, + makes a lane with it, a drag lands on a lane or on the lanes. It reads the document and writes ops with
-// `context.send`; the favourites are kept in local storage, not in the project.
+// `context.send`. The favourites are not in the project: in a tab opened from Nitro they are the Desk's list in
+// Nitro, which the Desk's agents read; anywhere else they stay in this browser's local storage. When Nitro does not answer
+// the read, a heart lasts as long as the window, so a failed read never overwrites the Desk's list.
 export const PulseGridBrowser = ({lifecycle, context}: Construct): HTMLElement => {
     const query = lifecycle.own(new DefaultObservableValue<string>(""))
     const drags = lifecycle.own(new Terminator())
+    const inNitro = NitroBridge.active()
     const state: {
         tab: PulseGridCatalogTab, favourites: ReadonlyArray<string>, open: Set<string>,
-        book: Optional<PulseGridSoundBook>, byId: Map<string, PulseGridCatalogItem>, suppressClick: boolean
+        book: Optional<PulseGridSoundBook>, byId: Map<string, PulseGridCatalogItem>, suppressClick: boolean,
+        store: "local" | "nitro" | "window", records: Map<string, PulseGridFavourite>
     } = {
-        tab: "all", favourites: Logic.readFavourites(() => localStorage), open: new Set(),
-        book: undefined, byId: new Map(), suppressClick: false
+        tab: "all", favourites: inNitro ? [] : Logic.readFavourites(() => localStorage), open: new Set(),
+        book: undefined, byId: new Map(), suppressClick: false, store: inNitro ? "window" : "local", records: new Map()
     }
     PulseGridSounds.load()
+    if (inNitro) {
+        NitroBridge.favourites().then(items => {
+            if (items === undefined) {return}
+            const records = Logic.parseFavourites(items)
+            state.records = new Map(records.map(record => [record.id, record]))
+            state.favourites = records.map(record => record.id)
+            state.store = "nitro"
+            render()
+        }, () => undefined)
+    }
+    // saves go one after the other, so the last heart is the list Nitro keeps
+    let saving: Promise<unknown> = Promise.resolve()
 
     const list: HTMLElement = <div className="list"/>
     const tabs: ReadonlyArray<HTMLElement> = Logic.Tabs.map(({key, label}) => {
@@ -70,9 +87,23 @@ export const PulseGridBrowser = ({lifecycle, context}: Construct): HTMLElement =
         }
     }
     const toggleFavourite = (item: PulseGridCatalogItem): void => {
-        state.favourites = Logic.toggleFavourite(state.favourites, item.id)
-        Logic.writeFavourites(() => localStorage, state.favourites)
+        const before = state.favourites
+        const after = Logic.toggleFavourite(before, item.id)
+        state.favourites = after
         render()
+        if (state.store === "local") {
+            Logic.writeFavourites(() => localStorage, after)
+        } else if (state.store === "nitro") {
+            const records = Logic.favouriteRecords(after, state.byId, state.records)
+            saving = saving.then(() => NitroBridge.saveFavourites(records)).then(saved => {
+                if (saved) {
+                    state.records = new Map(records.map(record => [record.id, record]))
+                } else if (state.favourites === after) {
+                    state.favourites = before // Nitro refused: the heart goes back
+                    render()
+                }
+            })
+        }
     }
     const toggleFolder = (key: string): void => {
         if (!state.open.delete(key)) {state.open.add(key)}

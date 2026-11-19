@@ -1,5 +1,5 @@
 import {int} from "@opendaw/lib-std"
-import {PulseGridCatalog, PulseGridCatalogItem, PulseGridCatalogTab} from "@opendaw/studio-adapters"
+import {PulseGridCatalog, PulseGridCatalogItem, PulseGridCatalogTab, PulseGridSoundInput} from "@opendaw/studio-adapters"
 
 type Category = PulseGridCatalogItem["category"]
 
@@ -17,6 +17,10 @@ export type PulseGridBrowserView = {sections: ReadonlyArray<PulseGridBrowserSect
 export type PulseGridDropTarget = {type: "lane", id: string} | {type: "new"} | {type: "none"}
 
 export type PulseGridBrowserBox = {left: number, top: number, right: number, bottom: number}
+
+// One favourite as Nitro keeps it for the Desk (Nitro's daw/pulsegrid/AGENT_WIRE.md, section 7). `sound` is what an
+// agent pastes into setLaneSound or addLane unchanged.
+export type PulseGridFavourite = {id: string, name: string, category: string, sound: PulseGridSoundInput}
 
 // What the favourites live in: a function, because even reaching `localStorage` can throw when it is blocked.
 export type PulseGridBrowserStore = () => Pick<Storage, "getItem" | "setItem">
@@ -122,6 +126,33 @@ export namespace PulseGridBrowserLogic {
 
     export const toggleFavourite = (ids: ReadonlyArray<string>, id: string): ReadonlyArray<string> =>
         ids.includes(id) ? ids.filter(other => other !== id) : [...ids, id]
+
+    // The favourites Nitro gave back: records with a string id, name and category and an object sound. Anything
+    // else is dropped, and a repeated id keeps the first.
+    export const parseFavourites = (items: ReadonlyArray<unknown>): ReadonlyArray<PulseGridFavourite> => {
+        const seen = new Set<string>()
+        return items.filter((item): item is PulseGridFavourite => {
+            if (typeof item !== "object" || item === null) {return false}
+            const {id, name, category, sound} = item as Record<string, unknown>
+            if (typeof id !== "string" || typeof name !== "string" || typeof category !== "string"
+                || typeof sound !== "object" || sound === null || seen.has(id)) {return false}
+            seen.add(id)
+            return true
+        })
+    }
+
+    // What Nitro stores for these ids, in their order. A sound this tab has loaded is described afresh; one it has
+    // not (a library that does not load here) keeps the record Nitro gave; an id with neither is left out.
+    export const favouriteRecords = (ids: ReadonlyArray<string>, loaded: ReadonlyMap<string, PulseGridCatalogItem>,
+                                     known: ReadonlyMap<string, PulseGridFavourite>): ReadonlyArray<PulseGridFavourite> =>
+        ids.flatMap(id => {
+            const item = loaded.get(id)
+            if (item !== undefined) {
+                return [{id, name: item.name, category: item.category, sound: PulseGridCatalog.sound(item)}]
+            }
+            const record = known.get(id)
+            return record === undefined ? [] : [record]
+        })
 
     const inside = (box: PulseGridBrowserBox, x: number, y: number): boolean =>
         x >= box.left && x < box.right && y >= box.top && y < box.bottom

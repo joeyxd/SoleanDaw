@@ -126,6 +126,26 @@ const release = (): void => {
 export namespace NitroBridge {
     export const active = (): boolean => session !== null
 
+    // Joi's favourite PulseGrid sounds live in Nitro, one list for the Desk, so its agents can read them (Nitro's
+    // daw/pulsegrid/AGENT_WIRE.md, section 7). Undefined outside a Nitro tab or when Nitro did not answer.
+    export const favourites = async (): Promise<ReadonlyArray<unknown> | undefined> => {
+        if (session === null) {return undefined}
+        const response = await fetch(route(session.key, "/pulsegrid/favourites")).catch(() => null)
+        if (response === null || !response.ok) {return undefined}
+        const body: unknown = await response.json().catch(() => null)
+        const items = typeof body === "object" && body !== null ? (body as {items?: unknown}).items : undefined
+        return Array.isArray(items) ? items : undefined
+    }
+
+    // Replaces the Desk's list. False when this tab holds no lease or Nitro refused.
+    export const saveFavourites = async (items: ReadonlyArray<unknown>): Promise<boolean> => {
+        if (session === null || !session.writable) {return false}
+        const response = await fetch(route(session.key, "/pulsegrid/favourites"), {
+            method: "PUT", headers: {...WriteHeaders, "content-type": "application/json"}, body: JSON.stringify({items})
+        }).catch(() => null)
+        return response !== null && response.ok
+    }
+
     export const install = async (service: StudioService): Promise<void> => {
         const key = projectKey()
         // Every visitor sees the source link, with or without a Nitro project.

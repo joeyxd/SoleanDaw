@@ -170,3 +170,26 @@ describe("PulseGridBrowserLogic.dropTarget", () => {
         expect(Logic.moved(0, -4)).toBe(true)
     })
 })
+
+describe("PulseGridBrowserLogic, the favourites Nitro keeps", () => {
+    const kick = items[0]
+    const vibes = items[10]
+    const loaded = new Map([kick, vibes].map(item => [item.id, item]))
+    const away = {id: "sample:far", name: "Far Kick", category: "drums", sound: {drum: "Analog Kick"}}
+    it("keeps the records with an id, a name, a category and a sound, the first of a repeated id", () => {
+        const kept = Logic.parseFavourites([
+            away, {...away, name: "again"}, {id: "x", name: "No sound", category: "drums"}, null, "x",
+            {id: 1, name: "n", category: "c", sound: {}}, {id: "y", name: "Y", category: "bass", sound: {drum: "Soft Kick"}}
+        ])
+        expect(kept.map(record => record.id)).toEqual(["sample:far", "y"])
+        expect(kept[0].name).toBe("Far Kick")
+    })
+    it("describes a loaded sound afresh with the sound an agent pastes, keeps an unloaded one as Nitro gave it", () => {
+        const records = Logic.favouriteRecords([vibes.id, away.id, "gone", kick.id], loaded, new Map([[away.id, away]]))
+        expect(records.map(record => record.id)).toEqual([vibes.id, away.id, kick.id])
+        expect(records[0]).toEqual({id: vibes.id, name: "Vibraphone", category: "mallets",
+            sound: {instrument: "Nano", sample: {uuid: "Vibraphone", name: "Vibraphone", duration: 1}}})
+        expect(records[1]).toBe(away)
+        expect(JSON.parse(JSON.stringify(records))).toEqual(records)
+    })
+})
