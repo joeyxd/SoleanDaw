@@ -1,7 +1,7 @@
 import css from "./PulseGridWindow.sass?inline"
 import {Lifecycle} from "@opendaw/lib-std"
 import {createElement} from "@opendaw/lib-jsx"
-import {Html} from "@opendaw/lib-dom"
+import {Events, Html} from "@opendaw/lib-dom"
 import {PulseGridActions} from "@opendaw/studio-adapters"
 import {Button} from "@/ui/components/Button"
 import {PulseGridContext} from "./PulseGridContext"
@@ -13,6 +13,10 @@ import {PulseGridScenes} from "./PulseGridScenes"
 import {PulseGridBrowser} from "./PulseGridBrowser"
 import {PulseGridBottomBar} from "./PulseGridBottomBar"
 import {PulseGridPanel} from "./PulseGridPanel"
+import {PulseGridLibrary} from "./PulseGridLibrary"
+import {PulseGridPackFiles} from "./PulseGridPackFiles"
+import {PulseGridPackImport} from "./PulseGridPackImport"
+import {PulseGridPackRun} from "./PulseGridPackRun"
 
 const className = Html.adoptStyleSheet(css, "PulseGridWindow")
 
@@ -48,7 +52,7 @@ export const PulseGridWindow = ({lifecycle, context}: Construct): HTMLElement =>
         const {on, entries} = owner.getValue().song
         emptySong.classList.toggle("hidden", !PulseGridScenesLogic.emptySong(on, entries.length))
     }))
-    return (
+    const root: HTMLElement = (
         <div className={className}>
             <PulseGridTopBar lifecycle={lifecycle} context={context}/>
             <PulseGridSceneBar lifecycle={lifecycle} context={context}/>
@@ -65,4 +69,28 @@ export const PulseGridWindow = ({lifecycle, context}: Construct): HTMLElement =>
             {toast}
         </div>
     )
+    // A pack dropped anywhere on the window (a .zip, a folder or audio files) is imported (SPEC.md, section 13).
+    const carriesFiles = (event: DragEvent): boolean => Array.from(event.dataTransfer?.types ?? []).includes("Files")
+    lifecycle.ownAll(
+        Events.subscribe(root, "dragover", event => {
+            if (!carriesFiles(event)) {return}
+            event.preventDefault()
+            root.classList.add("importing")
+        }),
+        Events.subscribe(root, "dragleave", event => {
+            if (event.relatedTarget === null || !root.contains(event.relatedTarget as Node)) {root.classList.remove("importing")}
+        }),
+        Events.subscribe(root, "drop", event => {
+            if (!carriesFiles(event) || event.dataTransfer === null) {return}
+            event.preventDefault()
+            event.stopPropagation()
+            root.classList.remove("importing")
+            if (!PulseGridLibrary.active()) {
+                return context.notice.setValue({kind: "error", text: PulseGridPackImport.NotInNitro})
+            }
+            PulseGridPackRun.start(PulseGridPackRun.environment(context), PulseGridPackFiles.fromDrop(event.dataTransfer))
+                .finally()
+        })
+    )
+    return root
 }

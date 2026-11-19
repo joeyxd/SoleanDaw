@@ -649,3 +649,28 @@ renders to (its envelope is 60 dB down; a 5 ms fade ends it; the peak is 0.9):
   network; the Kit menu offers the cloud kits, and the browser the cloud folders, only once the cloud index has
   loaded in this tab. When openDAW's library cannot be used on this site, the browser says so in one quiet line.
   Lanes that already point at cloud samples are not migrated.
+
+## 13. Team kit packs
+
+Family 6, fourth slice (19 Nov). Joi drops a downloaded pack on PulseGrid and its kits appear, for the whole team.
+The wire (routes, limits, the sound id, the manifest) is Nitro's `daw/pulsegrid/AGENT_WIRE.md`, section 8; this
+section is only what the tab does. All of it is the host's job (the app), nothing in the model or the ops: a kit
+loads with the same `setLaneSound` ops as any kit, and nothing about the PulseGrid changes by itself after an import.
+
+- Entry: "Import kit pack..." in the Kit menu (several files) and a drop of a .zip, a folder or audio files on the
+  window. Outside a Nitro tab the menu item is disabled and says "Open this project from Nitro to import packs".
+- Reading: files that are not `.wav .mp3 .ogg .flac .m4a .aif .aiff`, `__MACOSX/` and names that start with `.` are
+  ignored. A WAV is read as it is; the rest goes through the browser's audio context. What does not decode, lasts over
+  600 s or is over 16 MiB as a 32-bit float WAV is skipped and counted. There is no AIFF parser.
+- A pack: the zip's name without extension, a dropped folder's name, or for loose files the first file's folder or
+  `Pack <yyyy-mm-dd>`; its id is the name as a slug (section 8.5). Each zip and each dropped folder is a pack; all
+  loose files of one drop are one more.
+- A sound's id is the sha256 of its WAV as a uuid (section 8.1), so a file that is already in the library is not sent
+  again. Four uploads run at a time under one progress notice; a failed upload ends the import and saves nothing.
+- Role of a sound: from the file name, then each folder from the deepest up, Open Hat first, then Kick, Snare, Clap,
+  Hat, Perc (`PulseGridKits.Roles`). A folder holding a Kick, a Hat, and a Snare or a Clap is a kit; with none, the
+  whole pack is tried as one. Gaps are filled as in section 8.5. Repeated kit names get ` 2`, ` 3`.
+- Showing: the Kit menu has a submenu for each pack (its kits, and "Remove pack" after a confirm); the sound browser
+  has the folder `Team packs`, a folder for each pack inside it. A pack's sound plays through the host's sample
+  loader, which asks the team library after the built-in drums and before openDAW's cloud (it waits while the index
+  is loading).

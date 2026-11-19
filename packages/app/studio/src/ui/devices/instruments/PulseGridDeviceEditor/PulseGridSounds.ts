@@ -6,6 +6,7 @@ import {
 import {OpenSampleAPI} from "@/opendaw-api"
 import {TubularCartridges} from "../TubularDeviceEditor/TubularCartridges"
 import {PulseGridLaneLogic, PulseGridSoundFolder} from "./PulseGridLaneLogic"
+import {PulseGridLibrary, PulseGridPack} from "./PulseGridLibrary"
 
 type Library =
     | {status: "idle"}
@@ -32,6 +33,7 @@ export namespace PulseGridSounds {
     let library: Library = {status: "idle"}
     let voiceBook: Voices = {status: "idle"}
     let book: PulseGridSoundBook | undefined
+    let watching = false
     const listeners = new Set<Procedure<void>>()
 
     const arrived = (): void => {
@@ -40,6 +42,12 @@ export namespace PulseGridSounds {
     }
 
     export const load = (): void => {
+        // The team's packs (Nitro only) arrive on their own and tell the window like the other sources.
+        if (!watching) {
+            watching = true
+            PulseGridLibrary.subscribe(arrived)
+        }
+        PulseGridLibrary.load()
         if (library.status === "idle") {
             library = {status: "loading"}
             try {
@@ -81,6 +89,12 @@ export namespace PulseGridSounds {
         return PulseGridKits.All.filter(kit => kit.builtin === true || library.status === "ready")
     }
 
+    // The team's kit packs, as far as they have arrived (none outside Nitro). They do not wait for openDAW's library.
+    export const packs = (): ReadonlyArray<PulseGridPack> => {
+        load()
+        return PulseGridLibrary.packs()
+    }
+
     // The Tubular cartridges for `PulseGridOpsEnv.voices`: empty until they have been fetched (or when they failed).
     export const voices = (): ReadonlyArray<PulseGridCartridge> =>
         voiceBook.status === "ready" ? voiceBook.cartridges : []
@@ -97,7 +111,10 @@ export namespace PulseGridSounds {
         if (book !== undefined) {return book}
         const folder = library.status === "ready" ? library.folder : undefined
         const cartridges = voiceBook.status === "ready" ? voiceBook.cartridges : undefined
-        book = {items: PulseGridCatalog.items(folder, cartridges, true), blocked: library.status === "blocked"}
+        book = {
+            items: PulseGridLibrary.withTeam(PulseGridCatalog.items(folder, cartridges, true), PulseGridLibrary.packs()),
+            blocked: library.status === "blocked"
+        }
         return book
     }
 

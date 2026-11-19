@@ -1,5 +1,5 @@
 import css from "./PulseGridTopBar.sass?inline"
-import {DefaultObservableValue, Lifecycle} from "@opendaw/lib-std"
+import {DefaultObservableValue, Lifecycle, RuntimeNotifier} from "@opendaw/lib-std"
 import {createElement} from "@opendaw/lib-jsx"
 import {Events, Html} from "@opendaw/lib-dom"
 import {PulseGridActions, PulseGridKits, TempoRange, Validator} from "@opendaw/studio-adapters"
@@ -12,6 +12,10 @@ import {Surface} from "@/ui/surface/Surface"
 import {PulseGridContext} from "./PulseGridContext"
 import {PulseGridDial} from "./PulseGridDial"
 import {PulseGridKeyScale} from "./PulseGridKeyScale"
+import {PulseGridLibrary, PulseGridPack} from "./PulseGridLibrary"
+import {PulseGridPackFiles} from "./PulseGridPackFiles"
+import {PulseGridPackImport} from "./PulseGridPackImport"
+import {PulseGridPackRun} from "./PulseGridPackRun"
 import {PulseGridSounds} from "./PulseGridSounds"
 
 const className = Html.adoptStyleSheet(css, "PulseGridTopBar")
@@ -28,13 +32,43 @@ export const PulseGridTopBar = ({lifecycle, context}: Construct): HTMLElement =>
         const next = await Surface.get(name).requestFloatingTextInput(event, doc.getValue().name)
         if (active && next !== doc.getValue().name) {context.send(PulseGridActions.rename(next))}
     }))
+    const importPack = (): void => {
+        if (!PulseGridLibrary.active()) {
+            return context.notice.setValue({kind: "error", text: PulseGridPackImport.NotInNitro})
+        }
+        PulseGridPackFiles.pick(files =>
+            PulseGridPackRun.start(PulseGridPackRun.environment(context), PulseGridPackFiles.fromFiles(files)).finally())
+    }
+    const removePack = async (pack: PulseGridPack): Promise<void> => {
+        const approved = await RuntimeNotifier.approve({
+            headline: "Remove pack", approveText: "Remove",
+            message: `Remove "${pack.name}" from the team library? Every Desk loses it.`
+        })
+        if (!approved) {return}
+        const removed = await PulseGridLibrary.removePack(pack.id)
+        context.notice.setValue(removed.ok ? {kind: "info", text: `${pack.name} removed`}
+            : {kind: "error", text: `${pack.name}: ${removed.message}`})
+    }
+    const packMenu = (pack: PulseGridPack): MenuItem => {
+        const kits = PulseGridLibrary.kitsOf(pack)
+        return MenuItem.default({label: pack.name}).addMenuItem(
+            ...(kits.length === 0 ? [MenuItem.default({label: "No kits found in this pack", selectable: false})]
+                : kits.map(kit => MenuItem.default({label: kit.name})
+                    .setTriggerProcedure(() => context.send(PulseGridActions.loadKit(doc.getValue(), kit))))),
+            MenuItem.default({label: "Remove pack", separatorBefore: true})
+                .setTriggerProcedure(() => removePack(pack).finally()))
+    }
     const kit = MenuItem.root().setRuntimeChildrenProcedure(parent => parent.addMenuItem(
         MenuItem.header({label: "Kits", icon: IconSymbol.DrumSet}),
         ...PulseGridSounds.kits().map(kit => MenuItem.default({label: kit.name})
             .setTriggerProcedure(() => context.send(PulseGridActions.loadKit(doc.getValue(), kit)))),
+        ...PulseGridSounds.packs().map(packMenu),
         MenuItem.header({label: "Beats", icon: IconSymbol.DrumSet}),
         ...PulseGridKits.Beats.map(beat => MenuItem.default({label: beat.name})
-            .setTriggerProcedure(() => context.send(PulseGridActions.loadBeat(doc.getValue(), beat))))
+            .setTriggerProcedure(() => context.send(PulseGridActions.loadBeat(doc.getValue(), beat)))),
+        MenuItem.default({label: "Import kit pack...", separatorBefore: true, selectable: PulseGridLibrary.active()})
+            .setTriggerProcedure(importPack),
+        ...(PulseGridLibrary.active() ? [] : [MenuItem.default({label: PulseGridPackImport.NotInNitro, selectable: false})])
     ))
     const playIcon: HTMLElement = <span/>
     const play: HTMLElement = (

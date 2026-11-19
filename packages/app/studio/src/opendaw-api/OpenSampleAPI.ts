@@ -18,6 +18,7 @@ import {base64Credentials, OpenDAWHeaders} from "./OpenDAWHeaders"
 import {SampleIndex} from "./SampleIndex"
 import {z} from "zod"
 import {AudioData, WavFile} from "@opendaw/lib-dsp"
+import {PulseGridLibrary} from "@/ui/devices/instruments/PulseGridDeviceEditor/PulseGridLibrary"
 
 const SampleError = z.object({error: z.string()})
 
@@ -93,6 +94,12 @@ export class OpenSampleAPI implements SampleAPI {
             return Object.freeze({uuid: uuidAsString, name: drum.name, bpm: BuiltInBpm, duration: drum.duration,
                 sample_rate: BuiltInRate, origin: "openDAW" as const})
         }
+        // The team's kit packs (Nitro only): after the built-in drums, before openDAW's cloud.
+        const team = await PulseGridLibrary.find(uuidAsString)
+        if (isDefined(team)) {
+            return Object.freeze({uuid: uuidAsString, name: team.sound.name, bpm: BuiltInBpm,
+                duration: team.sound.seconds, sample_rate: BuiltInRate, origin: "openDAW" as const})
+        }
         const known = (await this.all()).find(sample => sample.uuid === uuidAsString)
         if (isDefined(known)) {return known}
         if (this.#notAllowed) {return panic(OpenSampleAPI.NotAllowed)}
@@ -116,6 +123,21 @@ export class OpenSampleAPI implements SampleAPI {
         if (isDefined(drum)) {
             progress(1)
             return [drum, await this.get(uuid)]
+        }
+        const uuidAsString = UUID.toString(uuid)
+        const team = await PulseGridLibrary.find(uuidAsString)
+        if (isDefined(team)) {
+            const response = await fetch(team.url)
+            if (!response.ok) {
+                return panic(`Failed to fetch sample ${uuidAsString}: ${response.status} ${response.statusText}`)
+            }
+            const audioData = WavFile.decodeFloats(await response.arrayBuffer())
+            progress(1)
+            return [audioData, {
+                uuid: uuidAsString, bpm: BuiltInBpm, name: team.sound.name,
+                duration: audioData.numberOfFrames / audioData.sampleRate, sample_rate: audioData.sampleRate,
+                origin: "openDAW"
+            }]
         }
         return this.get(uuid)
             .then(({uuid, name, bpm}) => Promises.retry(() => network

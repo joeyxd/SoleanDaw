@@ -5,6 +5,11 @@ import {ProjectBundle} from "@opendaw/studio-core"
 import type {StudioService} from "@/service/StudioService"
 import {NitroGenerate} from "@/nitro/NitroGenerate"
 import type {PulseGridLiveEntry} from "@/ui/devices/instruments/PulseGridDeviceEditor/PulseGridAgentInbox"
+import {
+    PulseGridLibrary,
+    PulseGridLibraryLink,
+    PulseGridLibraryResult
+} from "@/ui/devices/instruments/PulseGridDeviceEditor/PulseGridLibrary"
 
 type Session = { key: string, revision: number, service: StudioService, writable: boolean, saving: boolean }
 
@@ -117,6 +122,41 @@ const poll = async (current: Session): Promise<void> => {
     }
 }
 
+// Nitro's own sentence for a refusal (a 422 names the field), else the status.
+const refusal = async (response: Response): Promise<PulseGridLibraryResult> => {
+    const body: unknown = await response.json().catch(() => null)
+    // Nitro's middleware says it in `detail`, the sidecar's own refusals (413, 423, 403) in `error`
+    const said = typeof body === "object" && body !== null ? body as {detail?: unknown, error?: unknown} : {}
+    const detail = typeof said.detail === "string" ? said.detail : said.error
+    return {ok: false, message: typeof detail === "string" ? detail : `Nitro answered ${response.status}`}
+}
+
+// The team's kit packs for this tab (AGENT_WIRE.md section 8.3). Writes need the lease, like every tab write.
+const libraryLink = (current: Session): PulseGridLibraryLink => {
+    const base = (path: string): string => route(current.key, `/pulsegrid/library${path}`)
+    const write = async (path: string, init: RequestInit): Promise<PulseGridLibraryResult> => {
+        if (!current.writable) {return {ok: false, message: "This tab no longer holds the edit lease."}}
+        const response = await fetch(base(path), {...init, headers: {...WriteHeaders, ...init.headers}}).catch(() => null)
+        if (response === null) {return {ok: false, message: "Nitro did not answer."}}
+        return response.ok ? {ok: true} : refusal(response)
+    }
+    return {
+        sampleUrl: uuid => base(`/samples/${uuid}`),
+        index: async () => {
+            const response = await fetch(base(""), {signal: AbortSignal.timeout(10_000)}).catch(() => null)
+            if (response === null || !response.ok) {return undefined}
+            const body: unknown = await response.json().catch(() => null)
+            const packs = typeof body === "object" && body !== null ? (body as {packs?: unknown}).packs : undefined
+            return Array.isArray(packs) ? packs : undefined
+        },
+        putSample: (uuid, wav) => write(`/samples/${uuid}`, {method: "PUT", headers: {"content-type": "audio/wav"}, body: wav}),
+        putPack: pack => write(`/packs/${encodeURIComponent(pack.id)}`, {
+            method: "PUT", headers: {"content-type": "application/json"}, body: JSON.stringify(pack)
+        }),
+        removePack: id => write(`/packs/${encodeURIComponent(id)}`, {method: "DELETE"})
+    }
+}
+
 const release = (): void => {
     if (session === null || !session.writable) {return}
     session.writable = false
@@ -162,6 +202,7 @@ export namespace NitroBridge {
         const profile = await ProjectBundle.decode(service, await bundle.arrayBuffer())
         service.projectProfileService.setValue(Option.wrap(profile))
         session = {key, revision, service, writable: true, saving: false}
+        PulseGridLibrary.connect(libraryLink(session))
         document.title = `${title} · Nitro DAW`
         setInterval(() => renew().finally(), LeaseMillis)
         document.addEventListener("visibilitychange", () => {

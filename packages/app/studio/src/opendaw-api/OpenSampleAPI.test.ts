@@ -1,5 +1,7 @@
 import {afterEach, describe, expect, it, vi} from "vitest"
 import {UUID} from "@opendaw/lib-std"
+import {AudioData, WavFile} from "@opendaw/lib-dsp"
+import {PulseGridLibrary} from "@/ui/devices/instruments/PulseGridDeviceEditor/PulseGridLibrary"
 
 const limitFetch = vi.fn()
 vi.mock("@opendaw/lib-runtime", async original => ({
@@ -19,6 +21,7 @@ vi.stubGlobal("fetch", probe)
 afterEach(() => {
     limitFetch.mockReset()
     probe.mockReset()
+    PulseGridLibrary.connect(undefined)
 })
 
 describe("OpenSampleAPI, a site the library does not allow", () => {
@@ -54,5 +57,57 @@ describe("OpenSampleAPI, a site the library does not allow", () => {
         expect(limitFetch).toHaveBeenCalledTimes(2)
         await expect(api.get(UUID.parse("0f6c7d1e-1111-4222-8333-444455556666")))
             .rejects.toThrow(OpenSampleAPI.NotAllowed)
+    })
+})
+
+// A sound of the team library (Nitro): checked after the built-in drums and before openDAW's cloud.
+describe("OpenSampleAPI, the team library", () => {
+    const teamUuid = "7b0aaacd-69a8-483a-87fe-186dbef1c704"
+    const cloudUuid = "0f6c7d1e-1111-4222-8333-444455556666"
+    const wav = () => {
+        const audio = AudioData.create(48000, 4800, 1)
+        audio.frames[0].fill(0.25)
+        return WavFile.encodeFloats(audio)
+    }
+    const connect = () => PulseGridLibrary.connect({
+        sampleUrl: uuid => `/nitro-api/projects/key/pulsegrid/library/samples/${uuid}`,
+        index: async () => [{
+            id: "p", name: "P", source: "", kits: [],
+            sounds: [{uuid: teamUuid, name: "Kick 01", folder: "P", role: "Kick", seconds: 0.1}]
+        }],
+        putSample: vi.fn(), putPack: vi.fn(), removePack: vi.fn()
+    })
+
+    it("a library uuid loads from the library route and is decoded", async () => {
+        connect()
+        const bytes = wav()
+        probe.mockResolvedValue({ok: true, status: 200, statusText: "OK", arrayBuffer: async () => bytes})
+        const progress = vi.fn()
+        const [audio, sample] = await fresh().load(UUID.parse(teamUuid), progress)
+        expect(probe).toHaveBeenCalledWith(`/nitro-api/projects/key/pulsegrid/library/samples/${teamUuid}`)
+        expect(limitFetch).not.toHaveBeenCalled()
+        expect(audio.numberOfFrames).toBe(4800)
+        expect(audio.sampleRate).toBe(48000)
+        expect(sample).toMatchObject({uuid: teamUuid, name: "Kick 01", duration: 0.1, sample_rate: 48000, origin: "openDAW"})
+        expect(progress).toHaveBeenCalledWith(1)
+    })
+    it("get answers from the manifest without any request", async () => {
+        connect()
+        expect(await fresh().get(UUID.parse(teamUuid))).toMatchObject({uuid: teamUuid, name: "Kick 01", duration: 0.1})
+        expect(probe).not.toHaveBeenCalled()
+        expect(limitFetch).not.toHaveBeenCalled()
+    })
+    it("an unknown uuid falls through to openDAW's own path", async () => {
+        connect()
+        limitFetch.mockResolvedValue(answer(async () => ({version: 1, folders: [{name: "Drums", samples: [
+            {uuid: cloudUuid, name: "Cloud Kick", bpm: 0, duration: 1, sample_rate: 44100}]}]})))
+        expect(await fresh().get(UUID.parse(cloudUuid))).toMatchObject({uuid: cloudUuid, name: "Cloud Kick", origin: "openDAW"})
+        expect(probe).not.toHaveBeenCalled()
+    })
+    it("outside Nitro the library check makes no request", async () => {
+        limitFetch.mockResolvedValue(answer(async () => ({version: 1, folders: []})))
+        probe.mockResolvedValue({ok: false, status: 404, statusText: "Not Found", json: async () => ({})})
+        await expect(fresh().get(UUID.parse(cloudUuid))).rejects.toThrow()
+        expect(probe).not.toHaveBeenCalledWith(expect.stringContaining("/nitro-api/"))
     })
 })

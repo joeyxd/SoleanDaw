@@ -29,6 +29,11 @@ component
   font-size: 12px
   isolation: isolate
 
+  // a pack (files) is being dragged over the window
+  &.importing
+    outline: 2px dashed var(--pg-violet)
+    outline-offset: -4px
+
   > :not(.main):not(.notice)
     flex: 0 0 auto
 
